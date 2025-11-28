@@ -8,7 +8,7 @@ from .files import BinaryFile, TextFile
 from .types import OpenTextMode
 from .utils import FileMode, mode_to_posix
 
-__version__ = "0.1.1"
+__version__ = "1.0.0"
 __author__ = "Bastián García"
 __email__ = "bastiang@uc.cl"
 __all__ = ["open", "__version__"]
