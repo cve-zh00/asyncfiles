@@ -11,6 +11,9 @@ jobs:
     name: Semantic Release
     runs-on: ubuntu-latest
     concurrency: release
+    environment:
+      name: pypi
+      url: https://pypi.org/p/asyncfiles
     permissions:
       id-token: write
       contents: write
@@ -20,7 +23,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize submodules
+        run: |
+          git submodule init vendor/libuv
+          git submodule update vendor/libuv
 
       - name: Set up Python
         uses: actions/setup-python@v5
