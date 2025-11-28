@@ -13,7 +13,7 @@ MB = 1048576
 TEST_FILES = {
     "small": ("small_test.txt", int(MB / 1024)),  # 1KB
     "medium": ("medium_test.txt", MB),  # 1MB
-    "large": ("large_test.txt", 10 * MB),  # 10MB
+    "large": ("large_test.txt", 100 * MB),  # 10MB
 }
 
 
@@ -56,7 +56,7 @@ async def verify_content_match(filename):
         hash_async = calculate_hash(asyncfiles_content)
         hash_aiofiles = calculate_hash(aiofiles_content)
         hash_match = hash_aio == hash_async == hash_aiofiles
-
+        print(len(asyncfiles_content))
         return {
             "content_match": content_match,
             "hash_match": hash_match,

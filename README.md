@@ -2,7 +2,7 @@
 
 [![Python Versions](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/yourusername/asyncfiles)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/cve-zh00/asyncfiles/issues)
 
 **asyncfiles** is a high-performance async file I/O library for Python, built on top of [libuv](https://libuv.org/) using Cython. It provides true asynchronous file operations without blocking the event loop, offering significant performance improvements over thread-based alternatives.
 

@@ -58,7 +58,7 @@ async def benchmark_aiofile_write(filename, content):
 
 async def benchmark_asyncfiles_write(filename, content):
     """Benchmark escritura usando asyncfiles"""
-    async with open_asyncfiles(filename,"w") as f:
+    async with open_asyncfiles(filename, "w") as f:
         await f.write(content)
     return len(content)
 
@@ -87,6 +87,12 @@ async def main():
     print(
         "=== Benchmark ESCRITURA: asyncfiles vs aiofile vs aiofiles vs stdlib_async ===\n"
     )
+
+    # Variable para almacenar los resultados de la prueba más pesada
+    heaviest_results = None
+    heaviest_size_mb = 0
+    heaviest_name = None
+    heaviest_bench = None
 
     # Benchmark para cada tamaño de archivo
     for file_type, (filename, size) in TEST_CONFIGS.items():
@@ -120,6 +126,14 @@ async def main():
         results = await bench._run(iterations=5, max_concurrency=10)
         bench.print_summary(results)
 
+        # Guardar resultados de la prueba más pesada
+        size_mb = size / (1024 * 1024)  # Convertir bytes a MB
+        if size_mb > heaviest_size_mb:
+            heaviest_size_mb = size_mb
+            heaviest_results = results
+            heaviest_name = file_type
+            heaviest_bench = bench
+
         # Verificar contenido escrito (usar la última versión)
         print(f"\nVerificando contenido escrito en {filename}...")
         verification = await verify_written_content(filename, content)
@@ -133,6 +147,13 @@ async def main():
             else:
                 print(f"    Esperado: {verification['expected_length']} chars")
                 print(f"    Escrito: {verification['written_length']} chars")
+
+    # Generar gráfico para la prueba más pesada
+    if heaviest_results and heaviest_bench:
+        print(f"\n{'=' * 60}")
+        print(f"GENERANDO GRÁFICO MB/S PARA: {heaviest_name.upper()}")
+        print(f"{'=' * 60}\n")
+        heaviest_bench.plot_mbps_heaviest_test(heaviest_results, heaviest_size_mb)
 
     # Limpiar archivos de prueba
     print("\n\nLimpiando archivos de prueba...")

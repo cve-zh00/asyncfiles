@@ -14,11 +14,11 @@ cdef struct FSCloseContext:
 cdef struct FSReadContext:
     PyObject*   future
     uv_buf_t*   bufs
-    int chunk_size
-    int nbufs
+    Py_ssize_t chunk_size
+    Py_ssize_t nbufs
     int flags
     bint binary
-    int requested_size
+    Py_ssize_t requested_size
 
 ctypedef fused FSRWContext:
     FSReadContext
@@ -27,5 +27,5 @@ ctypedef fused FSRWContext:
 cdef struct FSWriteContext:
     PyObject*   future
     uv_buf_t*   bufs
-    int nbufs
+    Py_ssize_t nbufs
     PyObject* _refs

@@ -204,5 +204,5 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
 
         uv.uv_fs_req_cleanup(req)
         free(req)
-        free(ctx)
+        __free(ctx)
         Py_DECREF(future)
