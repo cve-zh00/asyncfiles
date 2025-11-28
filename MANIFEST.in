@@ -1,0 +1,49 @@
+# Include essential documentation
+include README.md
+include LICENSE
+include CHANGELOG.md
+
+# Include configuration files
+include pyproject.toml
+include setup.py
+include Makefile
+include requirements.txt
+
+# Include Cython source files
+recursive-include asyncfiles *.pyx
+recursive-include asyncfiles *.pxd
+recursive-include asyncfiles *.pyi
+recursive-include asyncfiles *.c
+recursive-include asyncfiles *.h
+
+# Include type hints
+include asyncfiles/py.typed
+
+# Include libuv vendor directory
+recursive-include vendor *
+prune vendor/libuv/.git
+
+# Include tests
+recursive-include tests *.py
+
+# Exclude compiled files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.so
+global-exclude *.dylib
+global-exclude *.dll
+global-exclude __pycache__
+
+# Exclude build artifacts
+prune build
+prune dist
+prune *.egg-info
+prune .git
+prune .github
+
+# Exclude development files
+exclude .gitignore
+exclude .gitmodules
+exclude tox.ini
+exclude .coverage
+prune htmlcov

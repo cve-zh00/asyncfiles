@@ -1,8 +1,6 @@
 # distutils: language = c
 # cython: language_level=3
-
-
-from .callbacks cimport cb_read, cb_write, cb_open, cb_close, cb_stat
+from .callbacks cimport cb_read, cb_write, cb_open, cb_close, cb_stat, cb_ftruncate
 from . cimport uv
 from .cpython cimport PyObject
 from .utils cimport new_future, FileMode
@@ -10,15 +8,12 @@ from .context cimport FSReadContext, FSWriteContext, FSOpenContext
 cimport cython
 from .utils cimport get_pump, Pump
 from libc.stdlib cimport malloc, free
+from libc.stdint cimport int64_t
 from cpython.bytearray cimport PyByteArray_FromStringAndSize
 from cpython.bytes  cimport  PyBytes_GET_SIZE,  PyBytes_AsString
 from cpython.ref    cimport Py_INCREF, Py_DECREF
 from cpython.unicode cimport  PyUnicode_AsUTF8, PyUnicode_AsUTF8String
 from asyncio import sleep
-
-# ============================================================================
-# Funciones auxiliares para manejo de buffers
-# ============================================================================
 
 cdef inline void _free_uv_bufs(uv.uv_buf_t* bufs, Py_ssize_t count)noexcept nogil:
     """Libera un array de buffers uv_buf_t"""
@@ -28,6 +23,27 @@ cdef inline void _free_uv_bufs(uv.uv_buf_t* bufs, Py_ssize_t count)noexcept nogi
             free(bufs[j].base)
     free(bufs)
 
+
+
+cdef inline uv.uv_fs_t* make_libuv_request(const char* path_cstr, int flags, int fd, object loop):
+    cdef:
+        object future = new_future(loop)
+        FSOpenContext* ctx = <FSOpenContext*>malloc(sizeof(FSOpenContext))
+    if ctx == NULL:
+        raise MemoryError("Cannot allocate FSOpenContext")
+
+    ctx.name_file = path_cstr
+    ctx.flags = flags
+    ctx.future = <PyObject*>future
+    ctx.fd = fd
+
+    Py_INCREF(future)
+    cdef uv.uv_fs_t* req = <uv.uv_fs_t*>malloc(sizeof(uv.uv_fs_t))
+    if req == NULL:
+        raise MemoryError("Cannot allocate uv_fs_t")
+
+    req.data = <void*>ctx
+    return req
 
 cdef inline uv.uv_buf_t* _make_uv_bufs(char* data_ptr, Py_ssize_t size, size_t buffer_size, int count) noexcept nogil:
     """Crea un array de buffers uv_buf_t para operaciones de I/O"""
@@ -57,6 +73,10 @@ cdef inline uv.uv_buf_t* _make_uv_bufs(char* data_ptr, Py_ssize_t size, size_t b
 
     return bufs
 
+
+cdef inline object fail_future(object future, const char* msg):
+    future.set_exception(OSError(msg))
+    return future
 
 cdef inline FSOpenContext* _create_fs_open_context(
     const char* path_cstr,
@@ -144,19 +164,18 @@ cdef inline void _cleanup_write_on_error(
         Py_DECREF(future)
 
 
-# ============================================================================
-# Clase File
-# ============================================================================
-
-cdef class File:
+cdef class BaseFile:
+    """Clase base para operaciones de archivos asíncronas"""
     cdef:
         str path
         const char*  path_cstr
         int fd, flags, size
+        int64_t offset
         object       loop
         uv.uv_loop_t*   uv_loop
         size_t       buffer_size
         FileMode file_mode
+
 
     def __init__(self, str path, FileMode mode, size_t buffer_size, object loop):
         self.path = path
@@ -168,13 +187,17 @@ cdef class File:
         self.file_mode = mode
         self.fd = -1
         self.size = -1
+        # Inicializar offset basado en el modo
+        if mode.appending:
+            self.offset = -1  # -1 indica append al final
+        else:
+            self.offset = 0
         self.__configure__bg_tasks()
 
     cdef inline int run_nowait(self)noexcept nogil:
         return uv.uv_run(self.uv_loop, uv.UV_RUN_NOWAIT)
 
     cdef __configure__bg_tasks(self):
-        """Configura las tareas en background"""
         cdef Pump pump = get_pump()
         pump.register_async_task(self._pump)
         pump.start(self.loop)
@@ -188,10 +211,6 @@ cdef class File:
                 raise OSError(-err, "uv_run failed")
             await sleep(0)
 
-    # ========================================================================
-    # Context Manager
-    # ========================================================================
-
     async def __aenter__(self):
         cdef:
             FSOpenContext* ctx
@@ -199,20 +218,13 @@ cdef class File:
             object future
             int err
 
-        future = new_future(self.loop)
-        try:
-            ctx = _create_fs_open_context(self.path_cstr, self.flags, -1, future)
-            req = _create_fs_request(<void*>ctx)
-        except MemoryError as e:
-            if 'ctx' in locals() and ctx != NULL:
-                free(ctx)
-                Py_DECREF(future)
-            raise e
-
+        req = make_libuv_request(self.path_cstr, self.flags, self.fd, self.loop)
+        ctx = <FSOpenContext*>req.data
+        future = <object>ctx.future
         err = uv.uv_fs_open(
             self.uv_loop,
             req,
-            ctx.name_file,
+            self.path_cstr,
             self.flags,
             0o644,
             cb_open
@@ -231,7 +243,6 @@ cdef class File:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Salida del context manager - cierra el archivo"""
-
         if self.fd >= 0:
             await self._close()
 
@@ -302,27 +313,85 @@ cdef class File:
 
         return future
 
+    cdef object _truncate(self, int64_t length):
+        """Trunca el archivo al tamaño especificado"""
+        cdef:
+            FSOpenContext* ctx
+            uv.uv_fs_t* req
+            object future
+            int err
+
+        future = new_future(self.loop)
+
+        try:
+            ctx = _create_fs_open_context(
+                self.path_cstr,
+                self.flags,
+                self.fd,
+                future
+            )
+            req = _create_fs_request(<void*>ctx)
+        except MemoryError:
+            future.set_exception(MemoryError("Cannot allocate memory for truncate"))
+            return future
+
+        err = uv.uv_fs_ftruncate(self.uv_loop, req, self.fd, length, cb_ftruncate)
+
+        if err < 0:
+            _cleanup_open_on_error(ctx, req, future)
+            future.set_exception(OSError(f"uv_fs_ftruncate failed: {err}"))
+            return future
+
+        return future
+
+    async def truncate(self, int64_t length=0):
+        """Trunca el archivo al tamaño especificado"""
+        await self._truncate(length)
+        if self.file_mode.readable:
+            self.size = length
+        return 0
+
+    cpdef seek(self, int64_t offset, int whence=0):
+
+        if whence == 0:  # SEEK_SET
+            self.offset = offset
+        elif whence == 1:  # SEEK_CUR
+            self.offset += offset
+        elif whence == 2:  # SEEK_END
+            if self.size >= 0:
+                self.offset = self.size + offset
+            else:
+                raise OSError("Cannot seek from end without knowing file size")
+        else:
+            raise ValueError(f"Invalid whence value: {whence}")
+
+        self.offset = max(0, self.offset)
+
+        return self.offset
+
+    cpdef tell(self):
+        """Retorna la posición actual en el archivo"""
+        return self.offset
+
     @cython.cdivision(True)
-    cpdef object read(self, int length=-1):
-        """Lee datos del archivo de forma asíncrona y devuelve un Future"""
+    cdef object _read_internal(self, int length=-1):
+        """Implementación interna de lectura"""
         cdef:
             object future = new_future(self.loop)
             int err
             Py_ssize_t total
-            int total_bufs
-            Py_ssize_t chunk_size
+            int total_bufs = 1
+            Py_ssize_t chunk_size = self.buffer_size
             FSReadContext* ctx = NULL
             uv.uv_fs_t* req = NULL
 
-        # Calcular tamaño total y número de buffers
-        total = self.size if self.size >= 0 else length
+
+        total = length if length >= 0 else max(0, self.size - self.offset)
 
         if total <= self.buffer_size:
-            total_bufs = 1
             chunk_size = total
         else:
             total_bufs = <int>((total + self.buffer_size - 1) // self.buffer_size)
-            chunk_size = self.buffer_size
 
         # Crear contexto de lectura
         ctx = <FSReadContext*> malloc(sizeof(FSReadContext))
@@ -333,7 +402,8 @@ cdef class File:
         ctx.nbufs = total_bufs
         ctx.bufs = _make_uv_bufs(NULL, total, chunk_size, total_bufs)
         ctx.future = <PyObject*>future
-
+        ctx.binary = self.file_mode.binary
+        ctx.requested_size = total
         if ctx.bufs == NULL:
             free(ctx)
             future.set_exception(MemoryError("Cannot allocate buffers"))
@@ -350,14 +420,13 @@ cdef class File:
 
         req.data = <void*>ctx
 
-        # Ejecutar lectura asíncrona
         err = uv.uv_fs_read(
             self.uv_loop,
             req,
             self.fd,
             ctx.bufs,
             <unsigned int>ctx.nbufs,
-            0,
+            self.offset,
             cb_read
         )
 
@@ -368,28 +437,20 @@ cdef class File:
 
         return future
 
-    # ========================================================================
-    # Operaciones de escritura
-    # ========================================================================
-
     @cython.cdivision(True)
-    cpdef object write(self, str data):
-        """Escribe datos al archivo de forma asíncrona"""
+    cdef object _write_internal(self, bytes bdata):
+        """Implementación interna de escritura"""
         cdef:
             object future
-            bytes bdata
             char* base_ptr
-            Py_ssize_t total_bytes, offset
+            Py_ssize_t total_bytes, offset, current_offset
             FSWriteContext* ctx = NULL
             int buf_size, nbufs, i, chunk_len, err
             uv.uv_fs_t* req = NULL
 
         future = new_future(self.loop)
-
-        # Codificar datos
-        bdata = PyUnicode_AsUTF8String(data)
-        if bdata is None:
-            future.set_exception(MemoryError("Error encoding data"))
+        if len(bdata) == 0:
+            future.set_result(0)
             return future
 
         base_ptr = PyBytes_AsString(bdata)
@@ -410,7 +471,7 @@ cdef class File:
             future.set_exception(MemoryError("Cannot allocate buffer structs"))
             return future
 
-        # Configurar buffers (sin copiar datos, solo referencias)
+        # Configurar buffers correctamente
         if nbufs == 1:
             ctx.bufs[0] = uv.uv_buf_init(base_ptr, <unsigned int>total_bytes)
         else:
@@ -437,8 +498,8 @@ cdef class File:
 
         req.data = <void*>ctx
 
-        # Ejecutar escritura asíncrona
-        err = uv.uv_fs_write(self.uv_loop, req, self.fd, ctx.bufs, ctx.nbufs, 0, cb_write)
+
+        err = uv.uv_fs_write(self.uv_loop, req, self.fd, ctx.bufs, ctx.nbufs, self.offset, cb_write)
 
         if err < 0:
             _cleanup_write_on_error(ctx, req, future, bdata)
@@ -446,3 +507,199 @@ cdef class File:
             return future
 
         return future
+
+
+cdef class BinaryFileIterator:
+    """Iterador especializado para leer líneas de archivos binarios"""
+    cdef:
+        BinaryFile file
+        bytes buffer
+        int chunk_size
+        bint exhausted
+
+    def __init__(self, BinaryFile binary_file, int chunk_size=8192):
+        """
+        Inicializa el iterador binario
+
+        Args:
+            binary_file: Instancia de BinaryFile a iterar
+            chunk_size: Tamaño del chunk para lectura (default 8192 bytes)
+        """
+        self.file = binary_file
+        self.buffer = b""
+        self.chunk_size = chunk_size
+        self.exhausted = False
+
+    def __aiter__(self):
+        """Retorna el iterador asíncrono"""
+        return self
+
+    async def __anext__(self):
+        """Lee la siguiente línea del archivo (separada por \\n)"""
+        cdef bytes chunk
+        cdef int newline_pos
+        cdef bytes line
+
+        # Si ya terminamos, no hay más líneas
+        if self.exhausted and not self.buffer:
+            raise StopAsyncIteration
+
+        # Buscar salto de línea en el buffer actual
+        while True:
+            newline_pos = self.buffer.find(b'\n')
+
+            if newline_pos != -1:
+                # Encontramos un salto de línea
+                line = self.buffer[:newline_pos + 1]
+                self.buffer = self.buffer[newline_pos + 1:]
+                return line
+
+            # No hay salto de línea, necesitamos leer más datos
+            if self.exhausted:
+                # Ya no hay más datos y no hay salto de línea
+                if self.buffer:
+                    # Retornar la última línea sin salto de línea
+                    line = self.buffer
+                    self.buffer = b""
+                    return line
+                else:
+                    raise StopAsyncIteration
+
+            # Leer más datos del archivo
+            chunk = await self.file.read(self.chunk_size)
+
+            if not chunk or len(chunk) == 0:
+                # Llegamos al final del archivo
+                self.exhausted = True
+            else:
+                # Agregar chunk al buffer
+                self.buffer += chunk
+
+
+cdef class BinaryFile(BaseFile):
+    """Clase para operaciones con archivos binarios"""
+
+    def __aiter__(self):
+        """Retorna un iterador especializado para leer líneas"""
+        return BinaryFileIterator(self)
+
+    async def write(self, bytes data):
+        """Escribe datos binarios en el archivo"""
+        result = await self._write_internal(data)
+        # Actualizar offset después de que la escritura seomplete
+        if result > 0 and self.offset >= 0:
+            self.offset += result
+        return result
+
+    async def read(self, int length=-1):
+        """Lee datos binarios del archivo de forma asíncrona"""
+        result = await self._read_internal(length)
+        # Actualizar offset después de la lectura
+        if isinstance(result, bytes):
+            bytes_read = len(result)
+            if self.offset >= 0:
+                self.offset += bytes_read
+        return result
+
+
+
+cdef class TextFileIterator:
+    """Iterador especializado para leer líneas de archivos de texto"""
+    cdef:
+        TextFile file
+        str buffer
+        int chunk_size
+        bint exhausted
+
+    def __init__(self, TextFile text_file, int chunk_size=8192):
+        """
+        Inicializa el iterador de texto
+
+        Args:
+            text_file: Instancia de TextFile a iterar
+            chunk_size: Tamaño del chunk para lectura (default 8192 bytes)
+        """
+        self.file = text_file
+        self.buffer = ""
+        self.chunk_size = chunk_size
+        self.exhausted = False
+
+    def __aiter__(self):
+        """Retorna el iterador asíncrono"""
+        return self
+
+    async def __anext__(self):
+        """Lee la siguiente línea del archivo"""
+        cdef str chunk
+        cdef int newline_pos
+        cdef str line
+
+        # Si ya terminamos, no hay más líneas
+        if self.exhausted and not self.buffer:
+            raise StopAsyncIteration
+
+        # Buscar salto de línea en el buffer actual
+        while True:
+            newline_pos = self.buffer.find('\n')
+
+            if newline_pos != -1:
+                # Encontramos un salto de línea
+                line = self.buffer[:newline_pos + 1]
+                self.buffer = self.buffer[newline_pos + 1:]
+                return line
+
+            # No hay salto de línea, necesitamos leer más datos
+            if self.exhausted:
+                # Ya no hay más datos y no hay salto de línea
+                if self.buffer:
+                    # Retornar la última línea sin salto de línea
+                    line = self.buffer
+                    self.buffer = ""
+                    return line
+                else:
+                    raise StopAsyncIteration
+
+            # Leer más datos del archivo
+            chunk = await self.file.read(self.chunk_size)
+
+            if not chunk or len(chunk) == 0:
+                # Llegamos al final del archivo
+                self.exhausted = True
+            else:
+                # Agregar chunk al buffer
+                self.buffer += chunk
+
+
+
+
+cdef class TextFile(BaseFile):
+    """Clase para operaciones con archivos de texto"""
+
+    def __aiter__(self):
+        """Retorna un iterador especializado para leer líneas"""
+        return TextFileIterator(self)
+
+    async def read(self, int length=-1):
+        """Lee texto del archivo de forma asíncrona"""
+        result = await self._read_internal(length)
+        # Actualizar offset después de la lectura
+        if isinstance(result, str):
+            # Para texto, necesitamos calcular bytes leídos
+            bytes_read = len(result.encode('utf-8'))
+            if self.offset >= 0:
+                self.offset += bytes_read
+        return result
+
+    async def write(self, str data):
+        """Escribe texto en el archivo de forma asíncrona"""
+        cdef bytes bdata
+
+        bdata = PyUnicode_AsUTF8String(data)
+        if bdata is None:
+            raise MemoryError("Error encoding data")
+
+        result = await self._write_internal(bdata)
+        # Actualizar offset después de que la escritura se complete
+        if result > 0 and self.offset >= 0:
+            self.offset += result
+        return result

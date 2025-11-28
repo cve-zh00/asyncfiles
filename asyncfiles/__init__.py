@@ -1,8 +1,10 @@
 import asyncio
 from contextlib import asynccontextmanager
 from functools import lru_cache
-from typing import Optional
-from .files import File
+from pathlib import Path
+from typing import Optional, Union
+
+from .files import BinaryFile, TextFile
 from .types import OpenTextMode
 from .utils import FileMode, mode_to_posix
 
@@ -26,7 +28,7 @@ def parse_mode(mode: str) -> FileMode:
 
 @asynccontextmanager
 async def open(
-    path: str,
+    path: Union[str, Path],
     mode: OpenTextMode = "r",
     buffer_size: int = 64 * 1024,
     loop: Optional[asyncio.AbstractEventLoop] = None,
@@ -35,8 +37,18 @@ async def open(
         loop = get_loop(loop)
         if loop is None:
             raise ValueError("No event loop provided")
-        async with File(
-            path=path, mode=parse_mode(mode), buffer_size=buffer_size, loop=loop
+
+        # Convert Path to str if necessary
+        if isinstance(path, Path):
+            path = str(path)
+
+        file_mode = parse_mode(mode)
+
+        # Seleccionar la clase apropiada según el modo
+        FileClass = BinaryFile if file_mode.binary else TextFile
+
+        async with FileClass(
+            path=path, mode=file_mode, buffer_size=buffer_size, loop=loop
         ) as f:
             yield f
     finally:

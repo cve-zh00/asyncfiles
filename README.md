@@ -187,24 +187,6 @@ make debug
 make test
 ```
 
-### Project Structure
-
-```
-asyncfiles/
-├── asyncfiles/
-│   ├── __init__.py      # Public API
-│   ├── files.pyx        # File operations
-│   ├── callbacks.pyx    # libuv callbacks
-│   ├── utils.pyx        # Utilities
-│   ├── types.py         # Type definitions
-│   └── *.pxd            # Cython declarations
-├── vendor/
-│   └── libuv/          # libuv submodule
-├── benchmark/          # Performance benchmarks
-├── setup.py           # Build configuration
-└── Makefile          # Build targets
-```
-
 ### Running Tests
 
 ```bash
@@ -267,11 +249,11 @@ Special thanks to:
 This project is currently in active development. The API may change. Production use is not recommended yet.
 
 ### Roadmap
-
-- [ ] Comprehensive test suite
+- [ ] Iteration support
+- [X] Comprehensive test suite
 - [ ] Complete documentation
-- [ ] Binary mode support
-- [ ] Seek/tell operations
+- [x] Binary mode support
+- [x] Seek/tell operations
 - [ ] File metadata operations
 - [ ] PyPI package release
 - [ ] CI/CD pipeline

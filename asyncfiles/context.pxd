@@ -9,14 +9,16 @@ cdef struct FSOpenContext:
     int fd
 
 cdef struct FSCloseContext:
-    PyObject* future       # Referencia al Future de asyncio
+    PyObject* future
 
 cdef struct FSReadContext:
-    PyObject*   future       # Referencia al Future de asyncio
+    PyObject*   future
     uv_buf_t*   bufs
     int chunk_size
     int nbufs
     int flags
+    bint binary
+    int requested_size
 
 ctypedef fused FSRWContext:
     FSReadContext

@@ -8,3 +8,4 @@ cdef void cb_close(uv.uv_fs_t* req) noexcept with gil
 cdef void cb_write(uv.uv_fs_t* req) noexcept with gil
 cdef void cb_read(uv.uv_fs_t* req) noexcept with gil
 cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil
+cdef void cb_ftruncate(uv.uv_fs_t* req) noexcept with gil

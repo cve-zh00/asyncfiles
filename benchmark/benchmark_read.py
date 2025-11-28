@@ -1,12 +1,13 @@
 import asyncio
 import hashlib
 import os
-
 import aiofiles
+import uvloop
 from aiofile import async_open
-
 from asyncfiles import open as open_asyncfiles
-from benchmark.benchmark import Benchmark
+from benchmark import Benchmark
+
+#asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 MB = 1048576
 TEST_FILES = {
@@ -115,9 +116,9 @@ async def main():
         verification = await verify_content_match(filename)
 
         if verification.get("content_match", False):
-            print(f"  ✓ Contenido idéntico")
+            print("  ✓ Contenido idéntico")
         else:
-            print(f"  ✗ Contenido difiere!")
+            print("  ✗ Contenido difiere!")
             content_issues = True
             if "error" in verification:
                 print(f"    Error: {verification['error']}")

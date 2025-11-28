@@ -26,19 +26,18 @@ cdef inline void __free(FSRWContext* ctx):
     if ctx == NULL:
         return
 
-    # Liberar los buffers individuales
     if ctx.bufs != NULL:
         for j in range(count):
             if ctx.bufs[j].base != NULL:
                 free(ctx.bufs[j].base)
-                ctx.bufs[j].base = NULL  # Prevent double-free
+                ctx.bufs[j].base = NULL
         free(ctx.bufs)
-        ctx.bufs = NULL  # Prevent double-free
+        ctx.bufs = NULL
 
-    # Decrementar la referencia del future
+
     if ctx.future != NULL:
         Py_DECREF(<object>ctx.future)
-        ctx.future = NULL  # Prevent double-decref
+        ctx.future = NULL
     free(ctx)
 
 
@@ -47,14 +46,18 @@ cdef void cb_open(uv.uv_fs_t* req) noexcept with gil:
     cdef object future = <object>ctx.future
     cdef int err = req.result
     cdef int result_obj
-    
+
     try:
         if err < 0:
-            future.set_exception(OSError(f"File operation failed: {err}"))
+            if err == -2:  # ENOENT
+                future.set_exception(FileNotFoundError(f"File not found"))
+            elif err == -17:  # EEXIST
+                future.set_exception(FileExistsError(f"File already exists"))
+            else:
+                future.set_exception(OSError(f"File operation failed: {err}"))
         else:
             result_obj = req.result
             future.set_result(result_obj)
-
 
     finally:
         uv.uv_fs_req_cleanup(req)
@@ -67,15 +70,13 @@ cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil:
     cdef FSOpenContext* ctx = <FSOpenContext*>req.data
     cdef object future = <object>ctx.future
     cdef int err = req.result
-    cdef int result_obj
 
     try:
         if err < 0:
             future.set_exception(OSError(f"File operation failed: {err}"))
         else:
-            result_obj = req.statbuf.st_size
-            
-            future.set_result(result_obj)
+
+            future.set_result(req.statbuf.st_size)
 
     finally:
         uv.uv_fs_req_cleanup(req)
@@ -102,6 +103,23 @@ cdef void cb_close(uv.uv_fs_t* req) noexcept with gil:
         Py_DECREF(future)
 
 
+cdef void cb_ftruncate(uv.uv_fs_t* req) noexcept with gil:
+    """Callback para operación ftruncate"""
+    cdef FSOpenContext* ctx = <FSOpenContext*>req.data
+    cdef object future = <object>ctx.future
+    cdef int err = req.result
+
+    try:
+        if err < 0:
+            future.set_exception(OSError(f"Truncate failed: {err}"))
+        else:
+            future.set_result(0)
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        free(ctx)
+        Py_DECREF(future)
+
 
 cdef void cb_write(uv.uv_fs_t* req) noexcept with gil:
     cdef FSWriteContext* ctx = <FSWriteContext*> req.data
@@ -126,53 +144,61 @@ cdef void cb_write(uv.uv_fs_t* req) noexcept with gil:
 
 
 cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
-    cdef FSReadContext* ctx = <FSReadContext*>req.data
+    cdef:
+        FSReadContext* ctx = <FSReadContext*>req.data
+        int err = req.result
+        object future = <object>ctx.future
+        object result_obj
+        bytes py_bytes
+        char* dest
 
-    cdef object future = <object>ctx.future
-    cdef int err = req.result
-    cdef object result_obj
-    cdef bytes py_bytes
-    cdef char* dest
-
-    cdef Py_ssize_t chunk_size, chunk_len, i
-    cdef Py_ssize_t offset = 0
-    cdef Py_ssize_t  total_size = err
+        Py_ssize_t chunk_size, chunk_len, i
+        Py_ssize_t offset = 0
+        Py_ssize_t  total_size = err
+        Py_ssize_t actual_size
 
     try:
         if err < 0:
             future.set_exception(OSError(f"File operation failed: {err}"))
         else:
+            # Limitar a lo que se pidió originalmente
+            actual_size = total_size
+            if ctx.requested_size > 0 and actual_size > ctx.requested_size:
+                actual_size = ctx.requested_size
 
             if ctx.nbufs == 1:
 
-                result_obj = PyBytes_FromStringAndSize(ctx.bufs[0].base, total_size)
-                if total_size <= 0 or ctx.bufs == NULL:
+                result_obj = PyBytes_FromStringAndSize(ctx.bufs[0].base, actual_size)
+                if actual_size <= 0 or ctx.bufs == NULL:
                     result_obj = PyBytes_FromStringAndSize("error", 0)
             else:
-                py_bytes = PyBytes_FromStringAndSize(NULL, total_size)
+                py_bytes = PyBytes_FromStringAndSize(NULL, actual_size)
                 if py_bytes != None:
                     dest = PyBytes_AS_STRING(py_bytes)
                     for i in range(ctx.nbufs):
-                        if offset >= total_size:
+                        if offset >= actual_size:
                             break
                         if ctx.bufs[i].base == NULL:
                             continue
 
                         chunk_len = ctx.bufs[i].len
-                        if chunk_len > total_size - offset:
-                            chunk_len = total_size - offset
+                        if chunk_len > actual_size - offset:
+                            chunk_len = actual_size - offset
 
                         if chunk_len > 0:
                             memcpy(dest + offset, ctx.bufs[i].base, chunk_len)
                             offset += chunk_len
 
                     result_obj = <object>py_bytes
-
-
                 else:
                     result_obj = PyBytes_FromStringAndSize("error", 0)
 
-            future.set_result(result_obj)
+            if ctx.binary:
+                #decode
+                future.set_result(result_obj)
+            else:
+                future.set_result(result_obj.decode('utf-8'))
+
 
     finally:
 
