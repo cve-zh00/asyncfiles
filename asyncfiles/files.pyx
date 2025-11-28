@@ -17,6 +17,8 @@ from cpython.ref    cimport Py_INCREF, Py_DECREF
 from cpython.unicode cimport  PyUnicode_AsUTF8, PyUnicode_AsUTF8String
 from asyncio import sleep
 
+
+
 cdef inline void _free_uv_bufs(uv.uv_buf_t* bufs, Py_ssize_t count)noexcept nogil:
     """Libera un array de buffers uv_buf_t"""
     cdef Py_ssize_t j
@@ -57,7 +59,7 @@ cdef inline uv.uv_buf_t* _make_uv_bufs(char* data_ptr, Py_ssize_t size, size_t b
     cdef Py_ssize_t chunk_len
     cdef char* ptr
 
-    for i in range(count):
+    for i in range(min(count,1024)):
         if i < count - 1:
             chunk_len = buffer_size
         else:
@@ -387,9 +389,7 @@ cdef class BaseFile:
             FSReadContext* ctx = NULL
             uv.uv_fs_t* req = NULL
             unsigned int nbufs_uint
-            Py_ssize_t MAX_BYTES_PER_OP = 64 * 1024 * 1024
             Py_ssize_t actual_read_size
-            Py_ssize_t internal_buffer_size
 
 
         total = length if length >= 0 else max(0, self.size - self.offset)
@@ -398,20 +398,14 @@ cdef class BaseFile:
             future.set_result(b"" if self.file_mode.binary else "")
             return future
 
-        if total > MAX_BYTES_PER_OP:
-            total = MAX_BYTES_PER_OP
 
-        internal_buffer_size = self.buffer_size
-        if total > 1024 * 1024:
-            internal_buffer_size = 1024 * 1024
 
-        if total <= internal_buffer_size:
+        if total <= self.buffer_size or total > self.buffer_size * 1024:
             chunk_size = total
             total_bufs = 1
         else:
-            total_bufs = (total + internal_buffer_size - 1) // internal_buffer_size
-            chunk_size = internal_buffer_size
-
+            total_bufs = (total + self.buffer_size - 1) // self.buffer_size
+            chunk_size = self.buffer_size
         actual_read_size = total
 
         # Crear contexto de lectura
@@ -420,7 +414,7 @@ cdef class BaseFile:
             future.set_exception(MemoryError("Cannot allocate FSReadContext"))
             return future
 
-        ctx.nbufs = total_bufs
+        ctx.nbufs = min(1024,total_bufs)
         ctx.bufs = _make_uv_bufs(NULL, actual_read_size, chunk_size, total_bufs)
         ctx.future = <PyObject*>future
         ctx.binary = self.file_mode.binary
@@ -629,10 +623,10 @@ cdef class BinaryFile(BaseFile):
 
         if total_to_read <= MAX_READ_PER_OP:
             chunk = await self._read_internal(length)
-            if isinstance(chunk, bytes):
-                bytes_read = len(chunk)
-                if self.offset >= 0:
-                    self.offset += bytes_read
+
+            bytes_read = len(chunk)
+            if self.offset >= 0:
+                self.offset += bytes_read
             return chunk
 
         result = bytearray()
@@ -725,7 +719,7 @@ cdef class TextFileIterator:
                 self.buffer += chunk
 
 
-
+import time
 
 cdef class TextFile(BaseFile):
     """Clase para operaciones con archivos de texto"""
@@ -735,45 +729,17 @@ cdef class TextFile(BaseFile):
         return TextFileIterator(self)
 
     async def read(self, int length=-1):
-        """Lee texto del archivo de forma asíncrona"""
-        cdef:
-            Py_ssize_t total_to_read = length if length >= 0 else max(0, self.size - self.offset)
-            Py_ssize_t MAX_READ_PER_OP = 64 * 1024 * 1024
-            list chunks = []
-            str chunk
-            Py_ssize_t chunk_size
-            Py_ssize_t remaining = total_to_read
-            Py_ssize_t chunk_len
+        total_to_read = length if length >= 0 else self.size - self.offset
 
         if total_to_read <= 0:
             return ""
 
-        if total_to_read <= MAX_READ_PER_OP:
-            result = await self._read_internal(length)
-            if isinstance(result, str):
-                bytes_read = len(result.encode('utf-8'))
-                if self.offset >= 0:
-                    self.offset += bytes_read
-            return result
+        data = await self._read_internal(total_to_read)
 
-        while remaining > 0:
-            chunk_size = min(remaining, MAX_READ_PER_OP)
-            chunk = await self._read_internal(<int>chunk_size)
+        if self.offset >= 0:
+            self.offset += len(data)
 
-            if not chunk:
-                break
-
-            chunks.append(chunk)
-            chunk_len = len(chunk.encode('utf-8'))
-            remaining -= chunk_len
-
-            if self.offset >= 0:
-                self.offset += chunk_len
-
-            if chunk_len < chunk_size:
-                break
-
-        return "".join(chunks)
+        return data.decode("utf-8")
 
     async def write(self, str data):
         """Escribe texto en el archivo de forma asíncrona"""

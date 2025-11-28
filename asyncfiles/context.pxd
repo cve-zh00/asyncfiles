@@ -19,6 +19,8 @@ cdef struct FSReadContext:
     int flags
     bint binary
     Py_ssize_t requested_size
+    int fd
+
 
 ctypedef fused FSRWContext:
     FSReadContext

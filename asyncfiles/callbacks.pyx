@@ -193,12 +193,7 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
                 else:
                     result_obj = PyBytes_FromStringAndSize("error", 0)
 
-            if ctx.binary:
-                #decode
-                future.set_result(result_obj)
-            else:
-                future.set_result(result_obj.decode('utf-8'))
-
+            future.set_result(result_obj)
 
     finally:
 

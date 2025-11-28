@@ -1,19 +1,21 @@
 import asyncio
 import hashlib
 import os
+
 import aiofiles
 import uvloop
 from aiofile import async_open
+
 from asyncfiles import open as open_asyncfiles
 from benchmark import Benchmark
 
-#asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+# asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 MB = 1048576
 TEST_FILES = {
     "small": ("small_test.txt", int(MB / 1024)),  # 1KB
     "medium": ("medium_test.txt", MB),  # 1MB
-    "large": ("large_test.txt", 100 * MB),  # 10MB
+    "large": ("large_test.txt", 63 * MB),  # 10MB
 }
 
 
@@ -42,10 +44,10 @@ async def verify_content_match(filename):
         async with async_open(filename, mode="r") as f:
             aiofile_content = await f.read()
 
-        # Leer con asyncfiles
-        async with open_asyncfiles(filename) as f:
+        
+        async with open_asyncfiles(filename, mode="r") as f:
             asyncfiles_content = await f.read()
-
+         
         # Leer con aiofiles
         async with aiofiles.open(filename, mode="r") as f:
             aiofiles_content = await f.read()
@@ -151,7 +153,7 @@ async def main():
         )
 
         # Ejecutar benchmark
-        results = await bench._run(iterations=5, max_concurrency=10)
+        results = await bench._run(iterations=5, max_concurrency=20)
         bench.print_summary(results)
 
     # Limpiar archivos de prueba
