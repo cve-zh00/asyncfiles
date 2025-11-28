@@ -143,7 +143,6 @@ class asyncfiles_build_ext(build_ext):
                         v = True
                     directives[k] = v
                 self.cython_directives = directives
-                    
 
             self.distribution.ext_modules[:] = cythonize(
                 self.distribution.ext_modules,
@@ -246,9 +245,9 @@ setup(
     description="High-performance async file I/O library built on libuv",
     long_description=open("README.md").read() if os.path.exists("README.md") else "",
     long_description_content_type="text/markdown",
-    author="Your Name",
-    author_email="your.email@example.com",
-    url="https://github.com/yourusername/asyncfiles",
+    author="bastian garcia",
+    author_email="bastiang@uc.cl",
+    url="https://github.com/cve-zh00/asyncfiles",
     license="MIT",
     platforms=["POSIX"],
     python_requires=">=3.8",
