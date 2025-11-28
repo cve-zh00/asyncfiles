@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "asyncfiles"
-version = "0.4.1"
+version = "0.1.1"
 description = "High-performance async file I/O library built on libuv"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Bastián García", email = "bastiang@uc.cl"}
 ]
 maintainers = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Bastián García", email = "bastiang@uc.cl"}
 ]
 keywords = [
     "async",
@@ -65,12 +65,6 @@ docs = [
     "sphinx-rtd-theme>=1.2",
 ]
 
-[project.urls]
-Homepage = "https://github.com/yourusername/asyncfiles"
-Documentation = "https://asyncfiles.readthedocs.io"
-Repository = "https://github.com/yourusername/asyncfiles"
-"Bug Tracker" = "https://github.com/yourusername/asyncfiles/issues"
-Changelog = "https://github.com/yourusername/asyncfiles/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["asyncfiles"]

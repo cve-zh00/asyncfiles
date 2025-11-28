@@ -200,21 +200,6 @@ PYTHONASYNCIODEBUG=1 python -m unittest discover -v tests
 make testinstalled
 ```
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-### Development Setup
-
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/yourusername/asyncfiles.git`
-3. Create a feature branch: `git checkout -b feature/amazing-feature`
-4. Make your changes
-5. Run tests: `make test`
-6. Commit your changes: `git commit -m 'Add amazing feature'`
-7. Push to the branch: `git push origin feature/amazing-feature`
-8. Open a Pull Request
-
 ### Code Style
 
 - Follow PEP 8 for Python code
@@ -262,8 +247,7 @@ This project is currently in active development. The API may change. Production 
 
 ## 💬 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/asyncfiles/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/asyncfiles/discussions)
+- **Issues**: [GitHub Issues](https://github.com/cve-zh00/asyncfiles/issues)
 
 ## 📈 Benchmarks
 
@@ -271,6 +255,6 @@ For detailed benchmark results and methodology, see [benchmark/README.md](benchm
 
 ---
 
-**Made with ❤️ and ⚡ by [Your Name]**
+**Made with ❤️ and ⚡ by Zh**
 
 *Inspired by uvloop's excellence in bringing libuv to Python*
