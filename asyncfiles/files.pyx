@@ -609,46 +609,18 @@ cdef class BinaryFile(BaseFile):
 
     async def read(self, int length=-1):
         """Lee datos binarios del archivo de forma asíncrona"""
-        cdef:
-            Py_ssize_t total_to_read = length if length >= 0 else max(0, self.size - self.offset)
-            Py_ssize_t MAX_READ_PER_OP = 64 * 1024 * 1024
-            bytearray result
-            Py_ssize_t chunk_size
-            Py_ssize_t remaining = total_to_read
-            bytes chunk
-            Py_ssize_t chunk_len
+
+
+        total_to_read = length if length >= 0 else self.size - self.offset
 
         if total_to_read <= 0:
-            return b""
+            return ""
 
-        if total_to_read <= MAX_READ_PER_OP:
-            chunk = await self._read_internal(length)
+        data = await self._read_internal(total_to_read)
+        if self.offset >= 0:
+            self.offset += len(data)
 
-            bytes_read = len(chunk)
-            if self.offset >= 0:
-                self.offset += bytes_read
-            return chunk
-
-        result = bytearray()
-
-        while remaining > 0:
-            chunk_size = min(remaining, MAX_READ_PER_OP)
-            chunk = await self._read_internal(<int>chunk_size)
-
-            if not chunk:
-                break
-
-            chunk_len = len(chunk)
-            result.extend(chunk)
-            remaining -= chunk_len
-
-            if self.offset >= 0:
-                self.offset += chunk_len
-
-            if chunk_len < chunk_size:
-                break
-
-        return bytes(result)
+        return result
 
 
 
@@ -718,8 +690,6 @@ cdef class TextFileIterator:
                 # Agregar chunk al buffer
                 self.buffer += chunk
 
-
-import time
 
 cdef class TextFile(BaseFile):
     """Clase para operaciones con archivos de texto"""
