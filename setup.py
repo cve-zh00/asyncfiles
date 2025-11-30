@@ -38,6 +38,16 @@ def _libuv_build_env():
     return env
 
 
+with open("asyncfiles/__init__.py") as f:
+    for line in f:
+        if line.startswith("__version__ ="):
+            _, _, version = line.partition("=")
+            VERSION = version.strip(" \n'\"")
+            break
+    else:
+        raise RuntimeError("unable to read the version from asyncfiles/__init__.py")
+
+
 def _libuv_autogen(env):
     """Run libuv autogen if needed"""
     if os.path.exists(os.path.join(LIBUV_DIR, "configure")):
@@ -51,6 +61,8 @@ def _libuv_autogen(env):
         )
 
     subprocess.run(["/bin/sh", "autogen.sh"], cwd=LIBUV_DIR, env=env, check=True)
+
+
 
 
 class asyncfiles_sdist(sdist):
@@ -239,9 +251,7 @@ if "--cython-always" in sys.argv or not all(
 ):
     setup_requires.append(CYTHON_DEPENDENCY)
 
-from asyncfiles import __version__
 
-VERSION = __version__
 setup(
     name="py-asyncfiles",
     version=VERSION,
