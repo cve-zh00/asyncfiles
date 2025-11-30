@@ -6,13 +6,13 @@ import aiofiles
 from aiofile import async_open
 
 from asyncfiles import open as open_asyncfiles
-from benchmark.benchmark import Benchmark
+from benchmark import Benchmark
 
 MB = 1048576
 TEST_CONFIGS = {
     "small": ("write_small_test.txt", int(MB / 1024)),  # 1KB
     "medium": ("write_medium_test.txt", MB),  # 1MB
-    "large": ("write_large_test.txt", 10 * MB),  # 10MB
+    "large": ("write_large_test.txt", 100 * MB),  # 10MB
 }
 
 

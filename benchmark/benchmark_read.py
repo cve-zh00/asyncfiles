@@ -15,7 +15,7 @@ MB = 1048576
 TEST_FILES = {
     "small": ("small_test.txt", int(MB / 1024)),  # 1KB
     "medium": ("medium_test.txt", MB),  # 1MB
-    "large": ("large_test.txt", 63 * MB),  # 10MB
+    "large": ("large_test.txt", 100 * MB),  # 10MB
 }
 
 
@@ -44,10 +44,9 @@ async def verify_content_match(filename):
         async with async_open(filename, mode="r") as f:
             aiofile_content = await f.read()
 
-        
         async with open_asyncfiles(filename, mode="r") as f:
             asyncfiles_content = await f.read()
-         
+
         # Leer con aiofiles
         async with aiofiles.open(filename, mode="r") as f:
             aiofiles_content = await f.read()

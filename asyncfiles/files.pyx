@@ -179,6 +179,7 @@ cdef class BaseFile:
         uv.uv_loop_t*   uv_loop
         size_t       buffer_size
         FileMode file_mode
+        object       _pump_task
 
 
     def __init__(self, str path, FileMode mode, size_t buffer_size, object loop):
@@ -191,6 +192,7 @@ cdef class BaseFile:
         self.file_mode = mode
         self.fd = -1
         self.size = -1
+        self._pump_task = None
         # Inicializar offset basado en el modo
         if mode.appending:
             self.offset = -1  # -1 indica append al final
@@ -202,9 +204,8 @@ cdef class BaseFile:
         return uv.uv_run(self.uv_loop, uv.UV_RUN_NOWAIT)
 
     cdef __configure__bg_tasks(self):
-        cdef Pump pump = get_pump()
-        pump.register_async_task(self._pump)
-        pump.start(self.loop)
+        from asyncio import create_task
+        self._pump_task = create_task(self._pump())
 
     async def _pump(self):
         """Pump para procesar eventos de libuv"""
@@ -249,6 +250,14 @@ cdef class BaseFile:
         """Salida del context manager - cierra el archivo"""
         if self.fd >= 0:
             await self._close()
+
+        # Cancelar y limpiar la tarea _pump
+        if self._pump_task is not None and not self._pump_task.done():
+            self._pump_task.cancel()
+            try:
+                await self._pump_task
+            except:
+                pass  # Ignorar excepciones de cancelación incluyendo CancelledError
 
     cdef object _get_size(self):
         """Obtiene el tamaño del archivo de forma asíncrona"""
@@ -465,7 +474,7 @@ cdef class BaseFile:
             uv.uv_fs_t* req = NULL
 
         future = new_future(self.loop)
-        if len(bdata) == 0:
+        if PyBytes_GET_SIZE(bdata) == 0:
             future.set_result(0)
             return future
 
@@ -620,7 +629,7 @@ cdef class BinaryFile(BaseFile):
         if self.offset >= 0:
             self.offset += len(data)
 
-        return result
+        return data
 
 
 
@@ -713,7 +722,9 @@ cdef class TextFile(BaseFile):
 
     async def write(self, str data):
         """Escribe texto en el archivo de forma asíncrona"""
-        cdef bytes bdata
+        cdef:
+            bytes bdata
+            int result
 
         bdata = PyUnicode_AsUTF8String(data)
         if bdata is None:

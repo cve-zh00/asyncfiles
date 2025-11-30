@@ -151,6 +151,7 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
         object result_obj
         bytes py_bytes
         char* dest
+        char* default_msg = b"error"
 
         Py_ssize_t chunk_size, chunk_len, i
         Py_ssize_t offset = 0
@@ -170,7 +171,7 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
 
                 result_obj = PyBytes_FromStringAndSize(ctx.bufs[0].base, actual_size)
                 if actual_size <= 0 or ctx.bufs == NULL:
-                    result_obj = PyBytes_FromStringAndSize("error", 0)
+                    result_obj = PyBytes_FromStringAndSize(default_msg, 0)
             else:
                 py_bytes = PyBytes_FromStringAndSize(NULL, actual_size)
                 if py_bytes != None:
@@ -182,6 +183,7 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
                             continue
 
                         chunk_len = ctx.bufs[i].len
+
                         if chunk_len > actual_size - offset:
                             chunk_len = actual_size - offset
 
