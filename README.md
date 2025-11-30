@@ -17,23 +17,10 @@
 
 ## 📦 Installation
 
-### From Source
+### From PyPI
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/asyncfiles.git
-cd asyncfiles
-
-# Initialize libuv submodule
-git submodule init
-git submodule update
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Build and install
-make compile
-pip install -e .
+pip3 install py-asyncfiles
 ```
 
 ### Requirements
