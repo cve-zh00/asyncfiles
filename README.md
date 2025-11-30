@@ -255,6 +255,4 @@ For detailed benchmark results and methodology, see [benchmark/README.md](benchm
 
 ---
 
-**Made with ❤️ and ⚡ by Zh**
-
-*Inspired by uvloop's excellence in bringing libuv to Python*
+**Made with ❤️ and ⚡ by Zh00**

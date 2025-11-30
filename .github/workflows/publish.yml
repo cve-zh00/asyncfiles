@@ -13,7 +13,6 @@ jobs:
     concurrency: release
     environment:
       name: pypi
-      url: https://pypi.org/p/asyncfiles
     permissions:
       id-token: write
       contents: write
