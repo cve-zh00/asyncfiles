@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+from termios import VEOF
 
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
@@ -238,10 +239,12 @@ if "--cython-always" in sys.argv or not all(
 ):
     setup_requires.append(CYTHON_DEPENDENCY)
 
+from asyncfiles import __version__
 
+VERSION = __version__
 setup(
-    name="asyncfiles",
-    version="0.1.0",
+    name="py-asyncfiles",
+    version=VERSION,
     description="High-performance async file I/O library built on libuv",
     long_description=open("README.md").read() if os.path.exists("README.md") else "",
     long_description_content_type="text/markdown",
