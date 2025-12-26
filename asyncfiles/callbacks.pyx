@@ -1,4 +1,8 @@
 # cython: language_level=3
+# cython: boundscheck=False
+# cython: wraparound=False
+# cython: cdivision=True
+# cython: initializedcheck=False
 from . cimport uv
 from libc.stdlib      cimport malloc, free
 from libc.string      cimport memcpy
@@ -8,7 +12,7 @@ from cpython.ref      cimport Py_INCREF, Py_DECREF, Py_CLEAR
 from cpython.object   cimport PyObject
 
 # Bytes y bytearray
-from cpython.bytes        cimport PyBytes_FromStringAndSize, PyBytes_AS_STRING
+from cpython.bytes        cimport PyBytes_FromStringAndSize, PyBytes_AS_STRING, PyBytes_FromObject
 from cpython.bytearray    cimport (
     PyByteArray_FromStringAndSize,
     PyByteArray_AsString,
@@ -18,7 +22,7 @@ from cpython.bytearray    cimport (
 
 from .context cimport FSOpenContext, FSRWContext, FSReadContext, FSWriteContext, FSCloseContext
 
-cdef inline void __free(FSRWContext* ctx):
+cdef inline void __free(FSRWContext* ctx) noexcept:
     cdef Py_ssize_t j
     if ctx == NULL:
         return
@@ -143,37 +147,39 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
         object future = <object>ctx.future
         object result_obj
         Py_ssize_t actual_size
-        bytes py_bytes
         char* dest
         Py_ssize_t chunk_len, i, offset
 
     try:
         if err < 0:
             future.set_exception(OSError(err))
-        else:
-            actual_size = err
-            if ctx.requested_size > 0 and actual_size > ctx.requested_size:
-                actual_size = ctx.requested_size
+            return
 
-            if actual_size <= 0 or ctx.bufs == NULL:
-                result_obj = b""
-            elif ctx.nbufs == 1:
-                result_obj = PyBytes_FromStringAndSize(ctx.bufs[0].base, actual_size)
-            else:
-                py_bytes = PyBytes_FromStringAndSize(NULL, actual_size)
-                dest = PyBytes_AS_STRING(py_bytes)
-                offset = 0
-                for i in range(ctx.nbufs):
-                    if offset >= actual_size:
-                        break
-                    chunk_len = ctx.bufs[i].len
-                    if chunk_len > actual_size - offset:
-                        chunk_len = actual_size - offset
+        actual_size = err
+        if ctx.requested_size > 0 and actual_size > ctx.requested_size:
+            actual_size = ctx.requested_size
+
+        if actual_size <= 0:
+            future.set_result(b"")
+            return
+
+        if ctx.nbufs == 1:
+            result_obj = PyBytes_FromStringAndSize(ctx.bufs[0].base, actual_size)
+        else:
+            result_obj = PyBytes_FromStringAndSize(NULL, actual_size)
+            dest = PyBytes_AS_STRING(<bytes>result_obj)
+            offset = 0
+            for i in range(ctx.nbufs):
+                chunk_len = ctx.bufs[i].len
+                if offset + chunk_len > actual_size:
+                    chunk_len = actual_size - offset
+                if chunk_len > 0:
                     memcpy(dest + offset, ctx.bufs[i].base, chunk_len)
                     offset += chunk_len
-                result_obj = py_bytes
+                if offset >= actual_size:
+                    break
 
-            future.set_result(result_obj)
+        future.set_result(result_obj)
 
     finally:
         uv.uv_fs_req_cleanup(req)

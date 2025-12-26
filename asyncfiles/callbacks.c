@@ -4609,15 +4609,15 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *                             continue
  * 
  *                         chunk_len = ctx.bufs[i].len             # <<<<<<<<<<<<<<
+ * 
  *                         if chunk_len > actual_size - offset:
- *                             chunk_len = actual_size - offset
  */
             __pyx_t_12 = (__pyx_v_ctx->bufs[__pyx_v_i]).len;
             __pyx_v_chunk_len = __pyx_t_12;
 
-            /* "asyncfiles/callbacks.pyx":186
- * 
+            /* "asyncfiles/callbacks.pyx":187
  *                         chunk_len = ctx.bufs[i].len
+ * 
  *                         if chunk_len > actual_size - offset:             # <<<<<<<<<<<<<<
  *                             chunk_len = actual_size - offset
  * 
@@ -4625,8 +4625,8 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
             __pyx_t_3 = (__pyx_v_chunk_len > (__pyx_v_actual_size - __pyx_v_offset));
             if (__pyx_t_3) {
 
-              /* "asyncfiles/callbacks.pyx":187
- *                         chunk_len = ctx.bufs[i].len
+              /* "asyncfiles/callbacks.pyx":188
+ * 
  *                         if chunk_len > actual_size - offset:
  *                             chunk_len = actual_size - offset             # <<<<<<<<<<<<<<
  * 
@@ -4634,16 +4634,16 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  */
               __pyx_v_chunk_len = (__pyx_v_actual_size - __pyx_v_offset);
 
-              /* "asyncfiles/callbacks.pyx":186
- * 
+              /* "asyncfiles/callbacks.pyx":187
  *                         chunk_len = ctx.bufs[i].len
+ * 
  *                         if chunk_len > actual_size - offset:             # <<<<<<<<<<<<<<
  *                             chunk_len = actual_size - offset
  * 
  */
             }
 
-            /* "asyncfiles/callbacks.pyx":189
+            /* "asyncfiles/callbacks.pyx":190
  *                             chunk_len = actual_size - offset
  * 
  *                         if chunk_len > 0:             # <<<<<<<<<<<<<<
@@ -4653,7 +4653,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
             __pyx_t_3 = (__pyx_v_chunk_len > 0);
             if (__pyx_t_3) {
 
-              /* "asyncfiles/callbacks.pyx":190
+              /* "asyncfiles/callbacks.pyx":191
  * 
  *                         if chunk_len > 0:
  *                             memcpy(dest + offset, ctx.bufs[i].base, chunk_len)             # <<<<<<<<<<<<<<
@@ -4662,7 +4662,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  */
               (void)(memcpy((__pyx_v_dest + __pyx_v_offset), (__pyx_v_ctx->bufs[__pyx_v_i]).base, __pyx_v_chunk_len));
 
-              /* "asyncfiles/callbacks.pyx":191
+              /* "asyncfiles/callbacks.pyx":192
  *                         if chunk_len > 0:
  *                             memcpy(dest + offset, ctx.bufs[i].base, chunk_len)
  *                             offset += chunk_len             # <<<<<<<<<<<<<<
@@ -4671,7 +4671,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  */
               __pyx_v_offset = (__pyx_v_offset + __pyx_v_chunk_len);
 
-              /* "asyncfiles/callbacks.pyx":189
+              /* "asyncfiles/callbacks.pyx":190
  *                             chunk_len = actual_size - offset
  * 
  *                         if chunk_len > 0:             # <<<<<<<<<<<<<<
@@ -4683,7 +4683,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
           }
           __pyx_L16_break:;
 
-          /* "asyncfiles/callbacks.pyx":193
+          /* "asyncfiles/callbacks.pyx":194
  *                             offset += chunk_len
  * 
  *                     result_obj = <object>py_bytes             # <<<<<<<<<<<<<<
@@ -4705,7 +4705,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
           goto __pyx_L14;
         }
 
-        /* "asyncfiles/callbacks.pyx":195
+        /* "asyncfiles/callbacks.pyx":196
  *                     result_obj = <object>py_bytes
  *                 else:
  *                     result_obj = PyBytes_FromStringAndSize("error", 0)             # <<<<<<<<<<<<<<
@@ -4713,7 +4713,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             future.set_result(result_obj)
  */
         /*else*/ {
-          __pyx_t_2 = PyBytes_FromStringAndSize(((char *)"error"), 0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 195, __pyx_L4_error)
+          __pyx_t_2 = PyBytes_FromStringAndSize(((char *)"error"), 0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 196, __pyx_L4_error)
           __Pyx_GOTREF(__pyx_t_2);
           __pyx_v_result_obj = __pyx_t_2;
           __pyx_t_2 = 0;
@@ -4722,14 +4722,14 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
       }
       __pyx_L10:;
 
-      /* "asyncfiles/callbacks.pyx":197
+      /* "asyncfiles/callbacks.pyx":198
  *                     result_obj = PyBytes_FromStringAndSize("error", 0)
  * 
  *             future.set_result(result_obj)             # <<<<<<<<<<<<<<
  * 
  *     finally:
  */
-      __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_result); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 197, __pyx_L4_error)
+      __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_result); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 198, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
       __pyx_t_5 = NULL;
       __pyx_t_7 = 0;
@@ -4749,7 +4749,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
         PyObject *__pyx_callargs[2] = {__pyx_t_5, __pyx_v_result_obj};
         __pyx_t_2 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
         __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 197, __pyx_L4_error)
+        if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 198, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_2);
         __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
       }
@@ -4758,7 +4758,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
     __pyx_L6:;
   }
 
-  /* "asyncfiles/callbacks.pyx":201
+  /* "asyncfiles/callbacks.pyx":202
  *     finally:
  * 
  *         uv.uv_fs_req_cleanup(req)             # <<<<<<<<<<<<<<
@@ -4769,7 +4769,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
     /*normal exit:*/{
       uv_fs_req_cleanup(__pyx_v_req);
 
-      /* "asyncfiles/callbacks.pyx":202
+      /* "asyncfiles/callbacks.pyx":203
  * 
  *         uv.uv_fs_req_cleanup(req)
  *         free(req)             # <<<<<<<<<<<<<<
@@ -4778,15 +4778,15 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  */
       free(__pyx_v_req);
 
-      /* "asyncfiles/callbacks.pyx":203
+      /* "asyncfiles/callbacks.pyx":204
  *         uv.uv_fs_req_cleanup(req)
  *         free(req)
  *         __free(ctx)             # <<<<<<<<<<<<<<
  *         Py_DECREF(future)
  */
-      __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(__pyx_v_ctx); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 203, __pyx_L1_error)
+      __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(__pyx_v_ctx); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 204, __pyx_L1_error)
 
-      /* "asyncfiles/callbacks.pyx":204
+      /* "asyncfiles/callbacks.pyx":205
  *         free(req)
  *         __free(ctx)
  *         Py_DECREF(future)             # <<<<<<<<<<<<<<
@@ -4814,7 +4814,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
       __pyx_t_13 = __pyx_lineno; __pyx_t_14 = __pyx_clineno; __pyx_t_15 = __pyx_filename;
       {
 
-        /* "asyncfiles/callbacks.pyx":201
+        /* "asyncfiles/callbacks.pyx":202
  *     finally:
  * 
  *         uv.uv_fs_req_cleanup(req)             # <<<<<<<<<<<<<<
@@ -4823,7 +4823,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  */
         uv_fs_req_cleanup(__pyx_v_req);
 
-        /* "asyncfiles/callbacks.pyx":202
+        /* "asyncfiles/callbacks.pyx":203
  * 
  *         uv.uv_fs_req_cleanup(req)
  *         free(req)             # <<<<<<<<<<<<<<
@@ -4832,15 +4832,15 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  */
         free(__pyx_v_req);
 
-        /* "asyncfiles/callbacks.pyx":203
+        /* "asyncfiles/callbacks.pyx":204
  *         uv.uv_fs_req_cleanup(req)
  *         free(req)
  *         __free(ctx)             # <<<<<<<<<<<<<<
  *         Py_DECREF(future)
  */
-        __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(__pyx_v_ctx); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 203, __pyx_L22_error)
+        __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(__pyx_v_ctx); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 204, __pyx_L22_error)
 
-        /* "asyncfiles/callbacks.pyx":204
+        /* "asyncfiles/callbacks.pyx":205
  *         free(req)
  *         __free(ctx)
  *         Py_DECREF(future)             # <<<<<<<<<<<<<<

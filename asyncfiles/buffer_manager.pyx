@@ -4,7 +4,7 @@
 # cython: wraparound=False
 
 from . cimport uv
-from libc.stdlib cimport malloc, free
+from libc.stdlib cimport malloc, free, calloc
 from .memory_utils cimport _free_uv_bufs
 cimport cython
 
@@ -15,7 +15,11 @@ cdef inline uv.uv_buf_t* _make_uv_bufs(char* data_ptr, Py_ssize_t size, size_t b
         return NULL
 
     if count == 1:
-        cdef char* ptr = <char*>malloc(size)
+        cdef char* ptr
+        if size > 5242880:
+            ptr = <char*>calloc(1, size)
+        else:
+            ptr = <char*>malloc(size)
         if ptr == NULL:
             free(bufs)
             return NULL
@@ -53,7 +57,7 @@ cdef class BufferManager:
         if total_size <= self.buffer_size:
             chunk_size = total_size
             total_bufs = 1
-        elif total_size <= 10485760:
+        elif total_size <= 5242880:
             total_bufs = (total_size + self.buffer_size - 1) // self.buffer_size
             chunk_size = self.buffer_size
         else:

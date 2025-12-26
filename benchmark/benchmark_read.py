@@ -14,8 +14,8 @@ from benchmark import Benchmark
 MB = 1048576
 TEST_FILES = {
     "small": ("small_test.txt", int(MB / 1024)),  # 1KB
-    "medium": ("medium_test.txt", MB),  # 1MB
-    "large": ("large_test.txt", 100 * MB),  # 10MB
+    "medium": ("medium_test.txt", 5 * MB),  # 1MB
+    "large": ("large_test.txt", 10 * MB),  # 10MB
 }
 
 
