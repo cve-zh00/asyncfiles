@@ -11,11 +11,12 @@ cimport cython
 
 cdef inline uv.uv_buf_t* _make_uv_bufs(char* data_ptr, Py_ssize_t size, size_t buffer_size, int count) noexcept nogil:
     cdef uv.uv_buf_t* bufs = <uv.uv_buf_t*>malloc(count * sizeof(uv.uv_buf_t))
+    cdef char* ptr
     if bufs == NULL:
         return NULL
 
     if count == 1:
-        cdef char* ptr
+
         if size > 5242880:
             ptr = <char*>calloc(1, size)
         else:

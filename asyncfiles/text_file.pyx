@@ -6,14 +6,16 @@
 from .base_file cimport BaseFile
 from .iterators cimport BaseFileIterator
 from cpython.unicode cimport PyUnicode_AsUTF8String
-
+from cpython.bytes cimport PyBytes_GET_SIZE
 
 cdef class TextFile(BaseFile):
     def __aiter__(self):
         return BaseFileIterator(self, 8192, False)
 
     async def read(self, int length=-1):
-        cdef Py_ssize_t total_to_read = length if length >= 0 else self.size - self.offset
+        cdef:
+            Py_ssize_t total_to_read = length if length >= 0 else self.size - self.offset
+            bytes data
 
         if total_to_read <= 0:
             return ""
@@ -21,7 +23,7 @@ cdef class TextFile(BaseFile):
         data = await self._read_internal(total_to_read)
 
         if self.offset >= 0:
-            self.offset += len(data)
+            self.offset += PyBytes_GET_SIZE(data)
 
         return data.decode("utf-8")
 
