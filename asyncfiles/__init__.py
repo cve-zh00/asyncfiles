@@ -8,6 +8,13 @@ from .files import BinaryFile, TextFile
 from .types import OpenTextMode
 from .utils import FileMode, mode_to_posix
 
+try:
+    import uvloop
+
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except:
+    pass
+
 __version__ = "1.1.3"
 __author__ = "Bastián García"
 __email__ = "bastiang@uc.cl"
@@ -46,9 +53,7 @@ async def open(
         # Convert Path to str if necessary
         if isinstance(path, Path):
             path = str(path)
-
         file_mode = parse_mode(mode)
-
         # Seleccionar la clase apropiada según el modo
         FileClass = BinaryFile if file_mode.binary else TextFile
 

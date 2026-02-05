@@ -9,13 +9,14 @@ from .memory_utils cimport _free_uv_bufs
 cimport cython
 
 
-cdef inline uv.uv_buf_t* _make_uv_bufs(char* data_ptr, Py_ssize_t size, size_t buffer_size, int count) noexcept nogil:
+cdef inline uv.uv_buf_t* _make_uv_bufs(char* data_ptr, Py_ssize_t size, size_t chunk_size, int count) noexcept nogil:
     cdef uv.uv_buf_t* bufs = <uv.uv_buf_t*>malloc(count * sizeof(uv.uv_buf_t))
+    cdef char* ptr
     if bufs == NULL:
         return NULL
 
     if count == 1:
-        cdef char* ptr = <char*>malloc(size)
+        ptr = <char*>malloc(size)
         if ptr == NULL:
             free(bufs)
             return NULL
@@ -27,7 +28,7 @@ cdef inline uv.uv_buf_t* _make_uv_bufs(char* data_ptr, Py_ssize_t size, size_t b
     cdef char* chunk_ptr
 
     for i in range(count):
-        chunk_len = buffer_size if i < count - 1 else size - buffer_size * (count - 1)
+        chunk_len = chunk_size if i < count - 1 else size - chunk_size * (count - 1)
         chunk_ptr = <char*>malloc(chunk_len)
         if chunk_ptr == NULL:
             _free_uv_bufs(bufs, i)
@@ -46,6 +47,8 @@ cdef class BufferManager:
     cdef inline tuple calculate_buffer_layout(self, Py_ssize_t total_size):
         cdef Py_ssize_t total_bufs = 1
         cdef Py_ssize_t chunk_size = self.buffer_size
+        cdef Py_ssize_t max_bufs = 64
+        cdef Py_ssize_t large_threshold = 10485760
 
         if total_size <= 0:
             return (0, 0, 0)
@@ -53,12 +56,20 @@ cdef class BufferManager:
         if total_size <= self.buffer_size:
             chunk_size = total_size
             total_bufs = 1
-        elif total_size <= 10485760:
-            total_bufs = (total_size + self.buffer_size - 1) // self.buffer_size
-            chunk_size = self.buffer_size
+        elif total_size > large_threshold:
+            total_bufs = (total_size + 2097152 - 1) // 2097152
+            if total_bufs > max_bufs:
+                chunk_size = (total_size + max_bufs - 1) // max_bufs
+                total_bufs = max_bufs
+            else:
+                chunk_size = 2097152
         else:
-            chunk_size = total_size
-            total_bufs = 1
+            total_bufs = (total_size + self.buffer_size - 1) // self.buffer_size
+            if total_bufs > max_bufs:
+                chunk_size = (total_size + max_bufs - 1) // max_bufs
+                total_bufs = max_bufs
+            else:
+                chunk_size = self.buffer_size
 
         return (total_size, chunk_size, total_bufs)
 

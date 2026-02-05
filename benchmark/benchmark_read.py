@@ -15,7 +15,7 @@ MB = 1048576
 TEST_FILES = {
     "small": ("small_test.txt", int(MB / 1024)),  # 1KB
     "medium": ("medium_test.txt", MB),  # 1MB
-    "large": ("large_test.txt", 100 * MB),  # 10MB
+    "large": ("large_test.txt", 5 * MB),  # 10MB
 }
 
 
@@ -152,7 +152,7 @@ async def main():
         )
 
         # Ejecutar benchmark
-        results = await bench._run(iterations=5, max_concurrency=20)
+        results = await bench._run(iterations=100, max_concurrency=100)
         bench.print_summary(results)
 
     # Limpiar archivos de prueba
