@@ -11,8 +11,8 @@ cdef class BaseFile:
     cdef:
         str path
         const char* path_cstr
-        int fd, flags, size
-        int64_t offset
+        int fd, flags
+        int64_t size, offset
         object loop
         uv.uv_loop_t* uv_loop
         size_t buffer_size

@@ -1492,17 +1492,17 @@ static const char *__pyx_f[] = {
   "type.pxd",
 };
 /* #### Code section: utility_code_proto_before_types ### */
-/* ForceInitThreads.proto */
-#ifndef __PYX_FORCE_INIT_THREADS
-  #define __PYX_FORCE_INIT_THREADS 0
-#endif
-
 /* NoFastGil.proto */
 #define __Pyx_PyGILState_Ensure PyGILState_Ensure
 #define __Pyx_PyGILState_Release PyGILState_Release
 #define __Pyx_FastGIL_Remember()
 #define __Pyx_FastGIL_Forget()
 #define __Pyx_FastGilFuncInit()
+
+/* ForceInitThreads.proto */
+#ifndef __PYX_FORCE_INIT_THREADS
+  #define __PYX_FORCE_INIT_THREADS 0
+#endif
 
 /* #### Code section: numeric_typedefs ### */
 /* #### Code section: complex_type_declarations ### */
@@ -1716,6 +1716,249 @@ static CYTHON_INLINE PyObject* __Pyx_PyObject_GetAttrStrNoError(PyObject* obj, P
 /* GetBuiltinName.proto */
 static PyObject *__Pyx_GetBuiltinName(PyObject *name);
 
+/* Profile.proto */
+#ifndef CYTHON_PROFILE
+#if CYTHON_COMPILING_IN_LIMITED_API || CYTHON_COMPILING_IN_PYPY
+  #define CYTHON_PROFILE 0
+#else
+  #define CYTHON_PROFILE 1
+#endif
+#endif
+#ifndef CYTHON_TRACE_NOGIL
+  #define CYTHON_TRACE_NOGIL 0
+#else
+  #if CYTHON_TRACE_NOGIL && !defined(CYTHON_TRACE)
+    #define CYTHON_TRACE 1
+  #endif
+#endif
+#ifndef CYTHON_TRACE
+  #define CYTHON_TRACE 0
+#endif
+#if CYTHON_TRACE
+  #undef CYTHON_PROFILE_REUSE_FRAME
+#endif
+#ifndef CYTHON_PROFILE_REUSE_FRAME
+  #define CYTHON_PROFILE_REUSE_FRAME 0
+#endif
+#if CYTHON_PROFILE || CYTHON_TRACE
+  #include "compile.h"
+  #include "frameobject.h"
+  #include "traceback.h"
+#if PY_VERSION_HEX >= 0x030b00a6 && !defined(PYPY_VERSION)
+  #ifndef Py_BUILD_CORE
+    #define Py_BUILD_CORE 1
+  #endif
+  #include "internal/pycore_frame.h"
+#endif
+  #if CYTHON_PROFILE_REUSE_FRAME
+    #define CYTHON_FRAME_MODIFIER static
+    #define CYTHON_FRAME_DEL(frame)
+  #else
+    #define CYTHON_FRAME_MODIFIER
+    #define CYTHON_FRAME_DEL(frame) Py_CLEAR(frame)
+  #endif
+  #define __Pyx_TraceDeclarations\
+      static PyCodeObject *__pyx_frame_code = NULL;\
+      CYTHON_FRAME_MODIFIER PyFrameObject *__pyx_frame = NULL;\
+      int __Pyx_use_tracing = 0;
+  #define __Pyx_TraceFrameInit(codeobj)\
+      if (codeobj) __pyx_frame_code = (PyCodeObject*) codeobj;
+#if PY_VERSION_HEX >= 0x030b00a2
+  #if PY_VERSION_HEX >= 0x030C00b1
+  #define __Pyx_IsTracing(tstate, check_tracing, check_funcs)\
+     ((!(check_tracing) || !(tstate)->tracing) &&\
+         (!(check_funcs) || (tstate)->c_profilefunc || (CYTHON_TRACE && (tstate)->c_tracefunc)))
+  #else
+  #define __Pyx_IsTracing(tstate, check_tracing, check_funcs)\
+     (unlikely((tstate)->cframe->use_tracing) &&\
+         (!(check_tracing) || !(tstate)->tracing) &&\
+         (!(check_funcs) || (tstate)->c_profilefunc || (CYTHON_TRACE && (tstate)->c_tracefunc)))
+  #endif
+  #define __Pyx_EnterTracing(tstate)  PyThreadState_EnterTracing(tstate)
+  #define __Pyx_LeaveTracing(tstate)  PyThreadState_LeaveTracing(tstate)
+#elif PY_VERSION_HEX >= 0x030a00b1
+  #define __Pyx_IsTracing(tstate, check_tracing, check_funcs)\
+     (unlikely((tstate)->cframe->use_tracing) &&\
+         (!(check_tracing) || !(tstate)->tracing) &&\
+         (!(check_funcs) || (tstate)->c_profilefunc || (CYTHON_TRACE && (tstate)->c_tracefunc)))
+  #define __Pyx_EnterTracing(tstate)\
+      do { tstate->tracing++; tstate->cframe->use_tracing = 0; } while (0)
+  #define __Pyx_LeaveTracing(tstate)\
+      do {\
+          tstate->tracing--;\
+          tstate->cframe->use_tracing = ((CYTHON_TRACE && tstate->c_tracefunc != NULL)\
+                                 || tstate->c_profilefunc != NULL);\
+      } while (0)
+#else
+  #define __Pyx_IsTracing(tstate, check_tracing, check_funcs)\
+     (unlikely((tstate)->use_tracing) &&\
+         (!(check_tracing) || !(tstate)->tracing) &&\
+         (!(check_funcs) || (tstate)->c_profilefunc || (CYTHON_TRACE && (tstate)->c_tracefunc)))
+  #define __Pyx_EnterTracing(tstate)\
+      do { tstate->tracing++; tstate->use_tracing = 0; } while (0)
+  #define __Pyx_LeaveTracing(tstate)\
+      do {\
+          tstate->tracing--;\
+          tstate->use_tracing = ((CYTHON_TRACE && tstate->c_tracefunc != NULL)\
+                                         || tstate->c_profilefunc != NULL);\
+      } while (0)
+#endif
+  #ifdef WITH_THREAD
+  #define __Pyx_TraceCall(funcname, srcfile, firstlineno, nogil, goto_error)\
+  if (nogil) {\
+      if (CYTHON_TRACE_NOGIL) {\
+          PyThreadState *tstate;\
+          PyGILState_STATE state = PyGILState_Ensure();\
+          tstate = __Pyx_PyThreadState_Current;\
+          if (__Pyx_IsTracing(tstate, 1, 1)) {\
+              __Pyx_use_tracing = __Pyx_TraceSetupAndCall(&__pyx_frame_code, &__pyx_frame, tstate, funcname, srcfile, firstlineno);\
+          }\
+          PyGILState_Release(state);\
+          if (unlikely(__Pyx_use_tracing < 0)) goto_error;\
+      }\
+  } else {\
+      PyThreadState* tstate = PyThreadState_GET();\
+      if (__Pyx_IsTracing(tstate, 1, 1)) {\
+          __Pyx_use_tracing = __Pyx_TraceSetupAndCall(&__pyx_frame_code, &__pyx_frame, tstate, funcname, srcfile, firstlineno);\
+          if (unlikely(__Pyx_use_tracing < 0)) goto_error;\
+      }\
+  }
+  #else
+  #define __Pyx_TraceCall(funcname, srcfile, firstlineno, nogil, goto_error)\
+  {   PyThreadState* tstate = PyThreadState_GET();\
+      if (__Pyx_IsTracing(tstate, 1, 1)) {\
+          __Pyx_use_tracing = __Pyx_TraceSetupAndCall(&__pyx_frame_code, &__pyx_frame, tstate, funcname, srcfile, firstlineno);\
+          if (unlikely(__Pyx_use_tracing < 0)) goto_error;\
+      }\
+  }
+  #endif
+  #define __Pyx_TraceException()\
+  if (likely(!__Pyx_use_tracing)); else {\
+      PyThreadState* tstate = __Pyx_PyThreadState_Current;\
+      if (__Pyx_IsTracing(tstate, 0, 1)) {\
+          __Pyx_EnterTracing(tstate);\
+          PyObject *exc_info = __Pyx_GetExceptionTuple(tstate);\
+          if (exc_info) {\
+              if (CYTHON_TRACE && tstate->c_tracefunc)\
+                  tstate->c_tracefunc(\
+                      tstate->c_traceobj, __pyx_frame, PyTrace_EXCEPTION, exc_info);\
+              tstate->c_profilefunc(\
+                  tstate->c_profileobj, __pyx_frame, PyTrace_EXCEPTION, exc_info);\
+              Py_DECREF(exc_info);\
+          }\
+          __Pyx_LeaveTracing(tstate);\
+      }\
+  }
+  static void __Pyx_call_return_trace_func(PyThreadState *tstate, PyFrameObject *frame, PyObject *result) {
+      PyObject *type, *value, *traceback;
+      __Pyx_ErrFetchInState(tstate, &type, &value, &traceback);
+      __Pyx_EnterTracing(tstate);
+      if (CYTHON_TRACE && tstate->c_tracefunc)
+          tstate->c_tracefunc(tstate->c_traceobj, frame, PyTrace_RETURN, result);
+      if (tstate->c_profilefunc)
+          tstate->c_profilefunc(tstate->c_profileobj, frame, PyTrace_RETURN, result);
+      CYTHON_FRAME_DEL(frame);
+      __Pyx_LeaveTracing(tstate);
+      __Pyx_ErrRestoreInState(tstate, type, value, traceback);
+  }
+  #ifdef WITH_THREAD
+  #define __Pyx_TraceReturn(result, nogil)\
+  if (likely(!__Pyx_use_tracing)); else {\
+      if (nogil) {\
+          if (CYTHON_TRACE_NOGIL) {\
+              PyThreadState *tstate;\
+              PyGILState_STATE state = PyGILState_Ensure();\
+              tstate = __Pyx_PyThreadState_Current;\
+              if (__Pyx_IsTracing(tstate, 0, 0)) {\
+                  __Pyx_call_return_trace_func(tstate, __pyx_frame, (PyObject*)result);\
+              }\
+              PyGILState_Release(state);\
+          }\
+      } else {\
+          PyThreadState* tstate = __Pyx_PyThreadState_Current;\
+          if (__Pyx_IsTracing(tstate, 0, 0)) {\
+              __Pyx_call_return_trace_func(tstate, __pyx_frame, (PyObject*)result);\
+          }\
+      }\
+  }
+  #else
+  #define __Pyx_TraceReturn(result, nogil)\
+  if (likely(!__Pyx_use_tracing)); else {\
+      PyThreadState* tstate = __Pyx_PyThreadState_Current;\
+      if (__Pyx_IsTracing(tstate, 0, 0)) {\
+          __Pyx_call_return_trace_func(tstate, __pyx_frame, (PyObject*)result);\
+      }\
+  }
+  #endif
+  static PyCodeObject *__Pyx_createFrameCodeObject(const char *funcname, const char *srcfile, int firstlineno);
+  static int __Pyx_TraceSetupAndCall(PyCodeObject** code, PyFrameObject** frame, PyThreadState* tstate, const char *funcname, const char *srcfile, int firstlineno);
+#else
+  #define __Pyx_TraceDeclarations
+  #define __Pyx_TraceFrameInit(codeobj)
+  #define __Pyx_TraceCall(funcname, srcfile, firstlineno, nogil, goto_error)   if ((1)); else goto_error;
+  #define __Pyx_TraceException()
+  #define __Pyx_TraceReturn(result, nogil)
+#endif
+#if CYTHON_TRACE
+  static int __Pyx_call_line_trace_func(PyThreadState *tstate, PyFrameObject *frame, int lineno) {
+      int ret;
+      PyObject *type, *value, *traceback;
+      __Pyx_ErrFetchInState(tstate, &type, &value, &traceback);
+      __Pyx_PyFrame_SetLineNumber(frame, lineno);
+      __Pyx_EnterTracing(tstate);
+      ret = tstate->c_tracefunc(tstate->c_traceobj, frame, PyTrace_LINE, NULL);
+      __Pyx_LeaveTracing(tstate);
+      if (likely(!ret)) {
+          __Pyx_ErrRestoreInState(tstate, type, value, traceback);
+      } else {
+          Py_XDECREF(type);
+          Py_XDECREF(value);
+          Py_XDECREF(traceback);
+      }
+      return ret;
+  }
+  #ifdef WITH_THREAD
+  #define __Pyx_TraceLine(lineno, nogil, goto_error)\
+  if (likely(!__Pyx_use_tracing)); else {\
+      if (nogil) {\
+          if (CYTHON_TRACE_NOGIL) {\
+              int ret = 0;\
+              PyThreadState *tstate;\
+              PyGILState_STATE state = __Pyx_PyGILState_Ensure();\
+              tstate = __Pyx_PyThreadState_Current;\
+              if (__Pyx_IsTracing(tstate, 0, 0) && tstate->c_tracefunc && __pyx_frame->f_trace) {\
+                  ret = __Pyx_call_line_trace_func(tstate, __pyx_frame, lineno);\
+              }\
+              __Pyx_PyGILState_Release(state);\
+              if (unlikely(ret)) goto_error;\
+          }\
+      } else {\
+          PyThreadState* tstate = __Pyx_PyThreadState_Current;\
+          if (__Pyx_IsTracing(tstate, 0, 0) && tstate->c_tracefunc && __pyx_frame->f_trace) {\
+              int ret = __Pyx_call_line_trace_func(tstate, __pyx_frame, lineno);\
+              if (unlikely(ret)) goto_error;\
+          }\
+      }\
+  }
+  #else
+  #define __Pyx_TraceLine(lineno, nogil, goto_error)\
+  if (likely(!__Pyx_use_tracing)); else {\
+      PyThreadState* tstate = __Pyx_PyThreadState_Current;\
+      if (__Pyx_IsTracing(tstate, 0, 0) && tstate->c_tracefunc && __pyx_frame->f_trace) {\
+          int ret = __Pyx_call_line_trace_func(tstate, __pyx_frame, lineno);\
+          if (unlikely(ret)) goto_error;\
+      }\
+  }
+  #endif
+#else
+  #define __Pyx_TraceLine(lineno, nogil, goto_error)   if ((1)); else goto_error;
+#endif
+
+/* WriteUnraisableException.proto */
+static void __Pyx_WriteUnraisable(const char *name, int clineno,
+                                  int lineno, const char *filename,
+                                  int full_traceback, int nogil);
+
 /* PyDictVersioning.proto */
 #if CYTHON_USE_DICT_VERSIONS && CYTHON_USE_TYPE_SLOTS
 #define __PYX_DICT_VERSION_INIT  ((PY_UINT64_T) -1)
@@ -1851,11 +2094,6 @@ static CYTHON_INLINE void __Pyx__ExceptionReset(PyThreadState *tstate, PyObject 
 #define __Pyx_ExceptionSave(type, value, tb)   PyErr_GetExcInfo(type, value, tb)
 #define __Pyx_ExceptionReset(type, value, tb)  PyErr_SetExcInfo(type, value, tb)
 #endif
-
-/* WriteUnraisableException.proto */
-static void __Pyx_WriteUnraisable(const char *name, int clineno,
-                                  int lineno, const char *filename,
-                                  int full_traceback, int nogil);
 
 /* TypeImport.proto */
 #ifndef __PYX_HAVE_RT_ImportType_proto_3_0_12
@@ -2271,13 +2509,18 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
 
 static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(struct __pyx_t_10asyncfiles_7context_FSReadContext *__pyx_v_ctx) {
   Py_ssize_t __pyx_v_j;
+  __Pyx_TraceDeclarations
   __Pyx_RefNannyDeclarations
   int __pyx_t_1;
   Py_ssize_t __pyx_t_2;
   Py_ssize_t __pyx_t_3;
   Py_ssize_t __pyx_t_4;
   PyObject *__pyx_t_5 = NULL;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("__pyx_fuse_0__free", 1);
+  __Pyx_TraceCall("__pyx_fuse_0__free", __pyx_f[0], 25, 0, __PYX_ERR(0, 25, __pyx_L1_error));
 
   /* "asyncfiles/callbacks.pyx":27
  * cdef inline void __free(FSRWContext* ctx) noexcept:
@@ -2286,6 +2529,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  *         return
  * 
  */
+  __Pyx_TraceLine(27,0,__PYX_ERR(0, 27, __pyx_L1_error))
   __pyx_t_1 = (__pyx_v_ctx == NULL);
   if (__pyx_t_1) {
 
@@ -2296,6 +2540,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  * 
  *     if ctx.bufs != NULL:
  */
+    __Pyx_TraceLine(28,0,__PYX_ERR(0, 28, __pyx_L1_error))
     goto __pyx_L0;
 
     /* "asyncfiles/callbacks.pyx":27
@@ -2314,6 +2559,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  *         for j in range(ctx.nbufs):
  *             if ctx.bufs[j].base != NULL:
  */
+  __Pyx_TraceLine(30,0,__PYX_ERR(0, 30, __pyx_L1_error))
   __pyx_t_1 = (__pyx_v_ctx->bufs != NULL);
   if (__pyx_t_1) {
 
@@ -2324,6 +2570,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  *             if ctx.bufs[j].base != NULL:
  *                 free(ctx.bufs[j].base)
  */
+    __Pyx_TraceLine(31,0,__PYX_ERR(0, 31, __pyx_L1_error))
     __pyx_t_2 = __pyx_v_ctx->nbufs;
     __pyx_t_3 = __pyx_t_2;
     for (__pyx_t_4 = 0; __pyx_t_4 < __pyx_t_3; __pyx_t_4+=1) {
@@ -2336,6 +2583,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  *                 free(ctx.bufs[j].base)
  *         free(ctx.bufs)
  */
+      __Pyx_TraceLine(32,0,__PYX_ERR(0, 32, __pyx_L1_error))
       __pyx_t_1 = ((__pyx_v_ctx->bufs[__pyx_v_j]).base != NULL);
       if (__pyx_t_1) {
 
@@ -2346,6 +2594,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  *         free(ctx.bufs)
  *         ctx.bufs = NULL
  */
+        __Pyx_TraceLine(33,0,__PYX_ERR(0, 33, __pyx_L1_error))
         free((__pyx_v_ctx->bufs[__pyx_v_j]).base);
 
         /* "asyncfiles/callbacks.pyx":32
@@ -2365,6 +2614,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  *         ctx.bufs = NULL
  * 
  */
+    __Pyx_TraceLine(34,0,__PYX_ERR(0, 34, __pyx_L1_error))
     free(__pyx_v_ctx->bufs);
 
     /* "asyncfiles/callbacks.pyx":35
@@ -2374,6 +2624,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  * 
  *     if ctx.future != NULL:
  */
+    __Pyx_TraceLine(35,0,__PYX_ERR(0, 35, __pyx_L1_error))
     __pyx_v_ctx->bufs = NULL;
 
     /* "asyncfiles/callbacks.pyx":30
@@ -2392,6 +2643,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  *         Py_DECREF(<object>ctx.future)
  *         ctx.future = NULL
  */
+  __Pyx_TraceLine(37,0,__PYX_ERR(0, 37, __pyx_L1_error))
   __pyx_t_1 = (__pyx_v_ctx->future != NULL);
   if (__pyx_t_1) {
 
@@ -2402,6 +2654,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  *         ctx.future = NULL
  *     free(ctx)
  */
+    __Pyx_TraceLine(38,0,__PYX_ERR(0, 38, __pyx_L1_error))
     __pyx_t_5 = ((PyObject *)__pyx_v_ctx->future);
     __Pyx_INCREF(__pyx_t_5);
     Py_DECREF(__pyx_t_5);
@@ -2414,6 +2667,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  *     free(ctx)
  * 
  */
+    __Pyx_TraceLine(39,0,__PYX_ERR(0, 39, __pyx_L1_error))
     __pyx_v_ctx->future = NULL;
 
     /* "asyncfiles/callbacks.pyx":37
@@ -2432,6 +2686,7 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  * 
  * 
  */
+  __Pyx_TraceLine(40,0,__PYX_ERR(0, 40, __pyx_L1_error))
   free(__pyx_v_ctx);
 
   /* "asyncfiles/callbacks.pyx":25
@@ -2443,7 +2698,12 @@ static CYTHON_INLINE void __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(str
  */
 
   /* function exit code */
+  goto __pyx_L0;
+  __pyx_L1_error:;
+  __Pyx_XDECREF(__pyx_t_5);
+  __Pyx_WriteUnraisable("asyncfiles.callbacks.__free", __pyx_clineno, __pyx_lineno, __pyx_filename, 1, 0);
   __pyx_L0:;
+  __Pyx_TraceReturn(Py_None, 0);
   __Pyx_RefNannyFinishContext();
 }
 
@@ -2460,6 +2720,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
   PyObject *__pyx_v_future = 0;
   int __pyx_v_err;
   int __pyx_v_result_obj;
+  __Pyx_TraceDeclarations
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
   Py_ssize_t __pyx_t_2;
@@ -2484,6 +2745,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
   PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
   #endif
   __Pyx_RefNannySetupContext("cb_open", 0);
+  __Pyx_TraceCall("cb_open", __pyx_f[0], 43, 0, __PYX_ERR(0, 43, __pyx_L1_error));
 
   /* "asyncfiles/callbacks.pyx":44
  * 
@@ -2492,6 +2754,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *     cdef object future = <object>ctx.future
  *     cdef int err = req.result
  */
+  __Pyx_TraceLine(44,0,__PYX_ERR(0, 44, __pyx_L1_error))
   __pyx_v_ctx = ((struct __pyx_t_10asyncfiles_7context_FSOpenContext *)__pyx_v_req->data);
 
   /* "asyncfiles/callbacks.pyx":45
@@ -2501,6 +2764,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *     cdef int err = req.result
  *     cdef int result_obj
  */
+  __Pyx_TraceLine(45,0,__PYX_ERR(0, 45, __pyx_L1_error))
   __pyx_t_1 = ((PyObject *)__pyx_v_ctx->future);
   __Pyx_INCREF(__pyx_t_1);
   __pyx_v_future = __pyx_t_1;
@@ -2513,6 +2777,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *     cdef int result_obj
  * 
  */
+  __Pyx_TraceLine(46,0,__PYX_ERR(0, 46, __pyx_L1_error))
   __pyx_t_2 = __pyx_v_req->result;
   __pyx_v_err = __pyx_t_2;
 
@@ -2523,6 +2788,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *         if err < 0:
  *             if err == -2:
  */
+  __Pyx_TraceLine(49,0,__PYX_ERR(0, 49, __pyx_L1_error))
   /*try:*/ {
 
     /* "asyncfiles/callbacks.pyx":50
@@ -2532,6 +2798,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *             if err == -2:
  *                 future.set_exception(FileNotFoundError())
  */
+    __Pyx_TraceLine(50,0,__PYX_ERR(0, 50, __pyx_L4_error))
     __pyx_t_3 = (__pyx_v_err < 0);
     if (__pyx_t_3) {
 
@@ -2542,6 +2809,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *                 future.set_exception(FileNotFoundError())
  *             elif err == -17:
  */
+      __Pyx_TraceLine(51,0,__PYX_ERR(0, 51, __pyx_L4_error))
       switch (__pyx_v_err) {
         case -2L:
 
@@ -2552,6 +2820,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *             elif err == -17:
  *                 future.set_exception(FileExistsError())
  */
+        __Pyx_TraceLine(52,0,__PYX_ERR(0, 52, __pyx_L4_error))
         __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_exception); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 52, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_4);
         __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_FileNotFoundError); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 52, __pyx_L4_error)
@@ -2601,6 +2870,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *             else:
  *                 future.set_exception(OSError(err))
  */
+        __Pyx_TraceLine(54,0,__PYX_ERR(0, 54, __pyx_L4_error))
         __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_exception); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 54, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_4);
         __Pyx_GetModuleGlobalName(__pyx_t_6, __pyx_n_s_FileExistsError); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 54, __pyx_L4_error)
@@ -2650,6 +2920,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *         else:
  *             result_obj = req.result
  */
+        __Pyx_TraceLine(56,0,__PYX_ERR(0, 56, __pyx_L4_error))
         __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_exception); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 56, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_4);
         __pyx_t_5 = __Pyx_PyInt_From_int(__pyx_v_err); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 56, __pyx_L4_error)
@@ -2701,6 +2972,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *             future.set_result(result_obj)
  * 
  */
+    __Pyx_TraceLine(58,0,__PYX_ERR(0, 58, __pyx_L4_error))
     /*else*/ {
       __pyx_t_2 = __pyx_v_req->result;
       __pyx_v_result_obj = __pyx_t_2;
@@ -2712,6 +2984,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  * 
  *     finally:
  */
+      __Pyx_TraceLine(59,0,__PYX_ERR(0, 59, __pyx_L4_error))
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_result); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 59, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
       __pyx_t_6 = __Pyx_PyInt_From_int(__pyx_v_result_obj); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 59, __pyx_L4_error)
@@ -2751,6 +3024,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         free(ctx)
  */
+  __Pyx_TraceLine(62,0,__PYX_ERR(0, 62, __pyx_L4_error))
   /*finally:*/ {
     /*normal exit:*/{
       uv_fs_req_cleanup(__pyx_v_req);
@@ -2762,6 +3036,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *         free(ctx)
  *         Py_DECREF(future)
  */
+      __Pyx_TraceLine(63,0,__PYX_ERR(0, 63, __pyx_L1_error))
       free(__pyx_v_req);
 
       /* "asyncfiles/callbacks.pyx":64
@@ -2771,6 +3046,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+      __Pyx_TraceLine(64,0,__PYX_ERR(0, 64, __pyx_L1_error))
       free(__pyx_v_ctx);
 
       /* "asyncfiles/callbacks.pyx":65
@@ -2780,6 +3056,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  * 
  * cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil:
  */
+      __Pyx_TraceLine(65,0,__PYX_ERR(0, 65, __pyx_L1_error))
       Py_DECREF(__pyx_v_future);
       goto __pyx_L5;
     }
@@ -2810,6 +3087,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         free(ctx)
  */
+        __Pyx_TraceLine(62,0,__PYX_ERR(0, 62, __pyx_L8_error))
         uv_fs_req_cleanup(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":63
@@ -2819,6 +3097,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *         free(ctx)
  *         Py_DECREF(future)
  */
+        __Pyx_TraceLine(63,0,__PYX_ERR(0, 63, __pyx_L8_error))
         free(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":64
@@ -2828,6 +3107,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+        __Pyx_TraceLine(64,0,__PYX_ERR(0, 64, __pyx_L8_error))
         free(__pyx_v_ctx);
 
         /* "asyncfiles/callbacks.pyx":65
@@ -2837,6 +3117,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
  * 
  * cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil:
  */
+        __Pyx_TraceLine(65,0,__PYX_ERR(0, 65, __pyx_L8_error))
         Py_DECREF(__pyx_v_future);
       }
       if (PY_MAJOR_VERSION >= 3) {
@@ -2851,6 +3132,18 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
       __Pyx_ErrRestore(__pyx_t_11, __pyx_t_12, __pyx_t_13);
       __pyx_t_11 = 0; __pyx_t_12 = 0; __pyx_t_13 = 0; __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       __pyx_lineno = __pyx_t_8; __pyx_clineno = __pyx_t_9; __pyx_filename = __pyx_t_10;
+      goto __pyx_L1_error;
+      __pyx_L8_error:;
+      if (PY_MAJOR_VERSION >= 3) {
+        __Pyx_XGIVEREF(__pyx_t_14);
+        __Pyx_XGIVEREF(__pyx_t_15);
+        __Pyx_XGIVEREF(__pyx_t_16);
+        __Pyx_ExceptionReset(__pyx_t_14, __pyx_t_15, __pyx_t_16);
+      }
+      __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+      __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
+      __Pyx_XDECREF(__pyx_t_13); __pyx_t_13 = 0;
+      __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       goto __pyx_L1_error;
     }
     __pyx_L5:;
@@ -2874,6 +3167,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_open(uv_fs_t *__pyx_v_req) {
   __Pyx_WriteUnraisable("asyncfiles.callbacks.cb_open", __pyx_clineno, __pyx_lineno, __pyx_filename, 1, 0);
   __pyx_L0:;
   __Pyx_XDECREF(__pyx_v_future);
+  __Pyx_TraceReturn(Py_None, 0);
   __Pyx_RefNannyFinishContext();
   #ifdef WITH_THREAD
   __Pyx_PyGILState_Release(__pyx_gilstate_save);
@@ -2892,6 +3186,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
   struct __pyx_t_10asyncfiles_7context_FSOpenContext *__pyx_v_ctx;
   PyObject *__pyx_v_future = 0;
   int __pyx_v_err;
+  __Pyx_TraceDeclarations
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
   Py_ssize_t __pyx_t_2;
@@ -2916,6 +3211,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
   PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
   #endif
   __Pyx_RefNannySetupContext("cb_stat", 0);
+  __Pyx_TraceCall("cb_stat", __pyx_f[0], 67, 0, __PYX_ERR(0, 67, __pyx_L1_error));
 
   /* "asyncfiles/callbacks.pyx":69
  * cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil:
@@ -2924,6 +3220,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  *     cdef object future = <object>ctx.future
  *     cdef int err = req.result
  */
+  __Pyx_TraceLine(69,0,__PYX_ERR(0, 69, __pyx_L1_error))
   __pyx_v_ctx = ((struct __pyx_t_10asyncfiles_7context_FSOpenContext *)__pyx_v_req->data);
 
   /* "asyncfiles/callbacks.pyx":70
@@ -2933,6 +3230,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  *     cdef int err = req.result
  * 
  */
+  __Pyx_TraceLine(70,0,__PYX_ERR(0, 70, __pyx_L1_error))
   __pyx_t_1 = ((PyObject *)__pyx_v_ctx->future);
   __Pyx_INCREF(__pyx_t_1);
   __pyx_v_future = __pyx_t_1;
@@ -2945,6 +3243,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  * 
  *     try:
  */
+  __Pyx_TraceLine(71,0,__PYX_ERR(0, 71, __pyx_L1_error))
   __pyx_t_2 = __pyx_v_req->result;
   __pyx_v_err = __pyx_t_2;
 
@@ -2955,6 +3254,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  *         if err < 0:
  *             future.set_exception(OSError(err))
  */
+  __Pyx_TraceLine(73,0,__PYX_ERR(0, 73, __pyx_L1_error))
   /*try:*/ {
 
     /* "asyncfiles/callbacks.pyx":74
@@ -2964,6 +3264,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  *             future.set_exception(OSError(err))
  *         else:
  */
+    __Pyx_TraceLine(74,0,__PYX_ERR(0, 74, __pyx_L4_error))
     __pyx_t_3 = (__pyx_v_err < 0);
     if (__pyx_t_3) {
 
@@ -2974,6 +3275,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  *         else:
  *             future.set_result(req.statbuf.st_size)
  */
+      __Pyx_TraceLine(75,0,__PYX_ERR(0, 75, __pyx_L4_error))
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_exception); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 75, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
       __pyx_t_5 = __Pyx_PyInt_From_int(__pyx_v_err); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 75, __pyx_L4_error)
@@ -3023,6 +3325,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  * 
  *     finally:
  */
+    __Pyx_TraceLine(77,0,__PYX_ERR(0, 77, __pyx_L4_error))
     /*else*/ {
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_result); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 77, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
@@ -3063,6 +3366,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         Py_DECREF(future)
  */
+  __Pyx_TraceLine(80,0,__PYX_ERR(0, 80, __pyx_L4_error))
   /*finally:*/ {
     /*normal exit:*/{
       uv_fs_req_cleanup(__pyx_v_req);
@@ -3074,6 +3378,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+      __Pyx_TraceLine(81,0,__PYX_ERR(0, 81, __pyx_L1_error))
       free(__pyx_v_req);
 
       /* "asyncfiles/callbacks.pyx":82
@@ -3083,6 +3388,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  * 
  * cdef void cb_close(uv.uv_fs_t* req) noexcept with gil:
  */
+      __Pyx_TraceLine(82,0,__PYX_ERR(0, 82, __pyx_L1_error))
       Py_DECREF(__pyx_v_future);
       goto __pyx_L5;
     }
@@ -3113,6 +3419,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         Py_DECREF(future)
  */
+        __Pyx_TraceLine(80,0,__PYX_ERR(0, 80, __pyx_L8_error))
         uv_fs_req_cleanup(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":81
@@ -3122,6 +3429,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+        __Pyx_TraceLine(81,0,__PYX_ERR(0, 81, __pyx_L8_error))
         free(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":82
@@ -3131,6 +3439,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
  * 
  * cdef void cb_close(uv.uv_fs_t* req) noexcept with gil:
  */
+        __Pyx_TraceLine(82,0,__PYX_ERR(0, 82, __pyx_L8_error))
         Py_DECREF(__pyx_v_future);
       }
       if (PY_MAJOR_VERSION >= 3) {
@@ -3145,6 +3454,18 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
       __Pyx_ErrRestore(__pyx_t_11, __pyx_t_12, __pyx_t_13);
       __pyx_t_11 = 0; __pyx_t_12 = 0; __pyx_t_13 = 0; __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       __pyx_lineno = __pyx_t_8; __pyx_clineno = __pyx_t_9; __pyx_filename = __pyx_t_10;
+      goto __pyx_L1_error;
+      __pyx_L8_error:;
+      if (PY_MAJOR_VERSION >= 3) {
+        __Pyx_XGIVEREF(__pyx_t_14);
+        __Pyx_XGIVEREF(__pyx_t_15);
+        __Pyx_XGIVEREF(__pyx_t_16);
+        __Pyx_ExceptionReset(__pyx_t_14, __pyx_t_15, __pyx_t_16);
+      }
+      __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+      __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
+      __Pyx_XDECREF(__pyx_t_13); __pyx_t_13 = 0;
+      __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       goto __pyx_L1_error;
     }
     __pyx_L5:;
@@ -3168,6 +3489,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_stat(uv_fs_t *__pyx_v_req) {
   __Pyx_WriteUnraisable("asyncfiles.callbacks.cb_stat", __pyx_clineno, __pyx_lineno, __pyx_filename, 1, 0);
   __pyx_L0:;
   __Pyx_XDECREF(__pyx_v_future);
+  __Pyx_TraceReturn(Py_None, 0);
   __Pyx_RefNannyFinishContext();
   #ifdef WITH_THREAD
   __Pyx_PyGILState_Release(__pyx_gilstate_save);
@@ -3187,6 +3509,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
   PyObject *__pyx_v_future = 0;
   int __pyx_v_err;
   int __pyx_v_result_obj;
+  __Pyx_TraceDeclarations
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
   Py_ssize_t __pyx_t_2;
@@ -3211,6 +3534,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
   PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
   #endif
   __Pyx_RefNannySetupContext("cb_close", 0);
+  __Pyx_TraceCall("cb_close", __pyx_f[0], 84, 0, __PYX_ERR(0, 84, __pyx_L1_error));
 
   /* "asyncfiles/callbacks.pyx":86
  * cdef void cb_close(uv.uv_fs_t* req) noexcept with gil:
@@ -3219,6 +3543,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *     cdef object future = <object>ctx.future
  *     cdef int err = req.result
  */
+  __Pyx_TraceLine(86,0,__PYX_ERR(0, 86, __pyx_L1_error))
   __pyx_v_ctx = ((struct __pyx_t_10asyncfiles_7context_FSOpenContext *)__pyx_v_req->data);
 
   /* "asyncfiles/callbacks.pyx":87
@@ -3228,6 +3553,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *     cdef int err = req.result
  *     cdef int result_obj
  */
+  __Pyx_TraceLine(87,0,__PYX_ERR(0, 87, __pyx_L1_error))
   __pyx_t_1 = ((PyObject *)__pyx_v_ctx->future);
   __Pyx_INCREF(__pyx_t_1);
   __pyx_v_future = __pyx_t_1;
@@ -3240,6 +3566,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *     cdef int result_obj
  *     try:
  */
+  __Pyx_TraceLine(88,0,__PYX_ERR(0, 88, __pyx_L1_error))
   __pyx_t_2 = __pyx_v_req->result;
   __pyx_v_err = __pyx_t_2;
 
@@ -3250,6 +3577,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *         if err < 0:
  *             future.set_exception(OSError(err))
  */
+  __Pyx_TraceLine(90,0,__PYX_ERR(0, 90, __pyx_L1_error))
   /*try:*/ {
 
     /* "asyncfiles/callbacks.pyx":91
@@ -3259,6 +3587,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *             future.set_exception(OSError(err))
  *         else:
  */
+    __Pyx_TraceLine(91,0,__PYX_ERR(0, 91, __pyx_L4_error))
     __pyx_t_3 = (__pyx_v_err < 0);
     if (__pyx_t_3) {
 
@@ -3269,6 +3598,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *         else:
  *             result_obj = req.result
  */
+      __Pyx_TraceLine(92,0,__PYX_ERR(0, 92, __pyx_L4_error))
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_exception); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 92, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
       __pyx_t_5 = __Pyx_PyInt_From_int(__pyx_v_err); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 92, __pyx_L4_error)
@@ -3318,6 +3648,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *             future.set_result(result_obj)
  * 
  */
+    __Pyx_TraceLine(94,0,__PYX_ERR(0, 94, __pyx_L4_error))
     /*else*/ {
       __pyx_t_2 = __pyx_v_req->result;
       __pyx_v_result_obj = __pyx_t_2;
@@ -3329,6 +3660,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  * 
  *     finally:
  */
+      __Pyx_TraceLine(95,0,__PYX_ERR(0, 95, __pyx_L4_error))
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_result); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 95, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
       __pyx_t_6 = __Pyx_PyInt_From_int(__pyx_v_result_obj); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 95, __pyx_L4_error)
@@ -3368,6 +3700,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         free(ctx)
  */
+  __Pyx_TraceLine(98,0,__PYX_ERR(0, 98, __pyx_L4_error))
   /*finally:*/ {
     /*normal exit:*/{
       uv_fs_req_cleanup(__pyx_v_req);
@@ -3379,6 +3712,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *         free(ctx)
  *         Py_DECREF(future)
  */
+      __Pyx_TraceLine(99,0,__PYX_ERR(0, 99, __pyx_L1_error))
       free(__pyx_v_req);
 
       /* "asyncfiles/callbacks.pyx":100
@@ -3388,6 +3722,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+      __Pyx_TraceLine(100,0,__PYX_ERR(0, 100, __pyx_L1_error))
       free(__pyx_v_ctx);
 
       /* "asyncfiles/callbacks.pyx":101
@@ -3397,6 +3732,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  * 
  * 
  */
+      __Pyx_TraceLine(101,0,__PYX_ERR(0, 101, __pyx_L1_error))
       Py_DECREF(__pyx_v_future);
       goto __pyx_L5;
     }
@@ -3427,6 +3763,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         free(ctx)
  */
+        __Pyx_TraceLine(98,0,__PYX_ERR(0, 98, __pyx_L8_error))
         uv_fs_req_cleanup(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":99
@@ -3436,6 +3773,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *         free(ctx)
  *         Py_DECREF(future)
  */
+        __Pyx_TraceLine(99,0,__PYX_ERR(0, 99, __pyx_L8_error))
         free(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":100
@@ -3445,6 +3783,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+        __Pyx_TraceLine(100,0,__PYX_ERR(0, 100, __pyx_L8_error))
         free(__pyx_v_ctx);
 
         /* "asyncfiles/callbacks.pyx":101
@@ -3454,6 +3793,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
  * 
  * 
  */
+        __Pyx_TraceLine(101,0,__PYX_ERR(0, 101, __pyx_L8_error))
         Py_DECREF(__pyx_v_future);
       }
       if (PY_MAJOR_VERSION >= 3) {
@@ -3468,6 +3808,18 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
       __Pyx_ErrRestore(__pyx_t_11, __pyx_t_12, __pyx_t_13);
       __pyx_t_11 = 0; __pyx_t_12 = 0; __pyx_t_13 = 0; __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       __pyx_lineno = __pyx_t_8; __pyx_clineno = __pyx_t_9; __pyx_filename = __pyx_t_10;
+      goto __pyx_L1_error;
+      __pyx_L8_error:;
+      if (PY_MAJOR_VERSION >= 3) {
+        __Pyx_XGIVEREF(__pyx_t_14);
+        __Pyx_XGIVEREF(__pyx_t_15);
+        __Pyx_XGIVEREF(__pyx_t_16);
+        __Pyx_ExceptionReset(__pyx_t_14, __pyx_t_15, __pyx_t_16);
+      }
+      __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+      __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
+      __Pyx_XDECREF(__pyx_t_13); __pyx_t_13 = 0;
+      __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       goto __pyx_L1_error;
     }
     __pyx_L5:;
@@ -3491,6 +3843,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_close(uv_fs_t *__pyx_v_req) {
   __Pyx_WriteUnraisable("asyncfiles.callbacks.cb_close", __pyx_clineno, __pyx_lineno, __pyx_filename, 1, 0);
   __pyx_L0:;
   __Pyx_XDECREF(__pyx_v_future);
+  __Pyx_TraceReturn(Py_None, 0);
   __Pyx_RefNannyFinishContext();
   #ifdef WITH_THREAD
   __Pyx_PyGILState_Release(__pyx_gilstate_save);
@@ -3509,6 +3862,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
   struct __pyx_t_10asyncfiles_7context_FSOpenContext *__pyx_v_ctx;
   PyObject *__pyx_v_future = 0;
   int __pyx_v_err;
+  __Pyx_TraceDeclarations
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
   Py_ssize_t __pyx_t_2;
@@ -3533,6 +3887,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
   PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
   #endif
   __Pyx_RefNannySetupContext("cb_ftruncate", 0);
+  __Pyx_TraceCall("cb_ftruncate", __pyx_f[0], 104, 0, __PYX_ERR(0, 104, __pyx_L1_error));
 
   /* "asyncfiles/callbacks.pyx":106
  * cdef void cb_ftruncate(uv.uv_fs_t* req) noexcept with gil:
@@ -3541,6 +3896,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *     cdef object future = <object>ctx.future
  *     cdef int err = req.result
  */
+  __Pyx_TraceLine(106,0,__PYX_ERR(0, 106, __pyx_L1_error))
   __pyx_v_ctx = ((struct __pyx_t_10asyncfiles_7context_FSOpenContext *)__pyx_v_req->data);
 
   /* "asyncfiles/callbacks.pyx":107
@@ -3550,6 +3906,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *     cdef int err = req.result
  * 
  */
+  __Pyx_TraceLine(107,0,__PYX_ERR(0, 107, __pyx_L1_error))
   __pyx_t_1 = ((PyObject *)__pyx_v_ctx->future);
   __Pyx_INCREF(__pyx_t_1);
   __pyx_v_future = __pyx_t_1;
@@ -3562,6 +3919,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  * 
  *     try:
  */
+  __Pyx_TraceLine(108,0,__PYX_ERR(0, 108, __pyx_L1_error))
   __pyx_t_2 = __pyx_v_req->result;
   __pyx_v_err = __pyx_t_2;
 
@@ -3572,6 +3930,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *         if err < 0:
  *             future.set_exception(OSError(err))
  */
+  __Pyx_TraceLine(110,0,__PYX_ERR(0, 110, __pyx_L1_error))
   /*try:*/ {
 
     /* "asyncfiles/callbacks.pyx":111
@@ -3581,6 +3940,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *             future.set_exception(OSError(err))
  *         else:
  */
+    __Pyx_TraceLine(111,0,__PYX_ERR(0, 111, __pyx_L4_error))
     __pyx_t_3 = (__pyx_v_err < 0);
     if (__pyx_t_3) {
 
@@ -3591,6 +3951,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *         else:
  *             future.set_result(0)
  */
+      __Pyx_TraceLine(112,0,__PYX_ERR(0, 112, __pyx_L4_error))
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_exception); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 112, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
       __pyx_t_5 = __Pyx_PyInt_From_int(__pyx_v_err); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 112, __pyx_L4_error)
@@ -3640,6 +4001,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *     finally:
  *         uv.uv_fs_req_cleanup(req)
  */
+    __Pyx_TraceLine(114,0,__PYX_ERR(0, 114, __pyx_L4_error))
     /*else*/ {
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_result); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 114, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
@@ -3677,6 +4039,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         free(ctx)
  */
+  __Pyx_TraceLine(116,0,__PYX_ERR(0, 116, __pyx_L4_error))
   /*finally:*/ {
     /*normal exit:*/{
       uv_fs_req_cleanup(__pyx_v_req);
@@ -3688,6 +4051,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *         free(ctx)
  *         Py_DECREF(future)
  */
+      __Pyx_TraceLine(117,0,__PYX_ERR(0, 117, __pyx_L1_error))
       free(__pyx_v_req);
 
       /* "asyncfiles/callbacks.pyx":118
@@ -3697,6 +4061,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+      __Pyx_TraceLine(118,0,__PYX_ERR(0, 118, __pyx_L1_error))
       free(__pyx_v_ctx);
 
       /* "asyncfiles/callbacks.pyx":119
@@ -3706,6 +4071,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  * 
  * 
  */
+      __Pyx_TraceLine(119,0,__PYX_ERR(0, 119, __pyx_L1_error))
       Py_DECREF(__pyx_v_future);
       goto __pyx_L5;
     }
@@ -3736,6 +4102,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         free(ctx)
  */
+        __Pyx_TraceLine(116,0,__PYX_ERR(0, 116, __pyx_L8_error))
         uv_fs_req_cleanup(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":117
@@ -3745,6 +4112,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *         free(ctx)
  *         Py_DECREF(future)
  */
+        __Pyx_TraceLine(117,0,__PYX_ERR(0, 117, __pyx_L8_error))
         free(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":118
@@ -3754,6 +4122,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+        __Pyx_TraceLine(118,0,__PYX_ERR(0, 118, __pyx_L8_error))
         free(__pyx_v_ctx);
 
         /* "asyncfiles/callbacks.pyx":119
@@ -3763,6 +4132,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
  * 
  * 
  */
+        __Pyx_TraceLine(119,0,__PYX_ERR(0, 119, __pyx_L8_error))
         Py_DECREF(__pyx_v_future);
       }
       if (PY_MAJOR_VERSION >= 3) {
@@ -3777,6 +4147,18 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
       __Pyx_ErrRestore(__pyx_t_11, __pyx_t_12, __pyx_t_13);
       __pyx_t_11 = 0; __pyx_t_12 = 0; __pyx_t_13 = 0; __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       __pyx_lineno = __pyx_t_8; __pyx_clineno = __pyx_t_9; __pyx_filename = __pyx_t_10;
+      goto __pyx_L1_error;
+      __pyx_L8_error:;
+      if (PY_MAJOR_VERSION >= 3) {
+        __Pyx_XGIVEREF(__pyx_t_14);
+        __Pyx_XGIVEREF(__pyx_t_15);
+        __Pyx_XGIVEREF(__pyx_t_16);
+        __Pyx_ExceptionReset(__pyx_t_14, __pyx_t_15, __pyx_t_16);
+      }
+      __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+      __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
+      __Pyx_XDECREF(__pyx_t_13); __pyx_t_13 = 0;
+      __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       goto __pyx_L1_error;
     }
     __pyx_L5:;
@@ -3800,6 +4182,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_ftruncate(uv_fs_t *__pyx_v_req) {
   __Pyx_WriteUnraisable("asyncfiles.callbacks.cb_ftruncate", __pyx_clineno, __pyx_lineno, __pyx_filename, 1, 0);
   __pyx_L0:;
   __Pyx_XDECREF(__pyx_v_future);
+  __Pyx_TraceReturn(Py_None, 0);
   __Pyx_RefNannyFinishContext();
   #ifdef WITH_THREAD
   __Pyx_PyGILState_Release(__pyx_gilstate_save);
@@ -3818,6 +4201,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
   struct __pyx_t_10asyncfiles_7context_FSWriteContext *__pyx_v_ctx;
   PyObject *__pyx_v_future = 0;
   Py_ssize_t __pyx_v_err;
+  __Pyx_TraceDeclarations
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
   Py_ssize_t __pyx_t_2;
@@ -3842,6 +4226,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
   PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
   #endif
   __Pyx_RefNannySetupContext("cb_write", 0);
+  __Pyx_TraceCall("cb_write", __pyx_f[0], 122, 0, __PYX_ERR(0, 122, __pyx_L1_error));
 
   /* "asyncfiles/callbacks.pyx":123
  * 
@@ -3850,6 +4235,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *     cdef object future = <object> ctx.future
  *     cdef Py_ssize_t err = req.result
  */
+  __Pyx_TraceLine(123,0,__PYX_ERR(0, 123, __pyx_L1_error))
   __pyx_v_ctx = ((struct __pyx_t_10asyncfiles_7context_FSWriteContext *)__pyx_v_req->data);
 
   /* "asyncfiles/callbacks.pyx":124
@@ -3859,6 +4245,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *     cdef Py_ssize_t err = req.result
  *     try:
  */
+  __Pyx_TraceLine(124,0,__PYX_ERR(0, 124, __pyx_L1_error))
   __pyx_t_1 = ((PyObject *)__pyx_v_ctx->future);
   __Pyx_INCREF(__pyx_t_1);
   __pyx_v_future = __pyx_t_1;
@@ -3871,6 +4258,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *     try:
  *         if err < 0:
  */
+  __Pyx_TraceLine(125,0,__PYX_ERR(0, 125, __pyx_L1_error))
   __pyx_t_2 = __pyx_v_req->result;
   __pyx_v_err = __pyx_t_2;
 
@@ -3881,6 +4269,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *         if err < 0:
  *             future.set_exception(OSError(err))
  */
+  __Pyx_TraceLine(126,0,__PYX_ERR(0, 126, __pyx_L1_error))
   /*try:*/ {
 
     /* "asyncfiles/callbacks.pyx":127
@@ -3890,6 +4279,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *             future.set_exception(OSError(err))
  *         else:
  */
+    __Pyx_TraceLine(127,0,__PYX_ERR(0, 127, __pyx_L4_error))
     __pyx_t_3 = (__pyx_v_err < 0);
     if (__pyx_t_3) {
 
@@ -3900,6 +4290,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *         else:
  *             future.set_result(err)
  */
+      __Pyx_TraceLine(128,0,__PYX_ERR(0, 128, __pyx_L4_error))
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_exception); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 128, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
       __pyx_t_5 = PyInt_FromSsize_t(__pyx_v_err); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 128, __pyx_L4_error)
@@ -3949,6 +4340,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  * 
  *         if ctx._refs != NULL:
  */
+    __Pyx_TraceLine(130,0,__PYX_ERR(0, 130, __pyx_L4_error))
     /*else*/ {
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_result); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 130, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
@@ -3988,6 +4380,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *             Py_DECREF(<object> ctx._refs)
  * 
  */
+    __Pyx_TraceLine(132,0,__PYX_ERR(0, 132, __pyx_L4_error))
     __pyx_t_3 = (__pyx_v_ctx->_refs != NULL);
     if (__pyx_t_3) {
 
@@ -3998,6 +4391,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  * 
  *     finally:
  */
+      __Pyx_TraceLine(133,0,__PYX_ERR(0, 133, __pyx_L4_error))
       __pyx_t_1 = ((PyObject *)__pyx_v_ctx->_refs);
       __Pyx_INCREF(__pyx_t_1);
       Py_DECREF(__pyx_t_1);
@@ -4020,6 +4414,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         Py_DECREF(future)
  */
+  __Pyx_TraceLine(137,0,__PYX_ERR(0, 137, __pyx_L4_error))
   /*finally:*/ {
     /*normal exit:*/{
       uv_fs_req_cleanup(__pyx_v_req);
@@ -4031,6 +4426,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+      __Pyx_TraceLine(138,0,__PYX_ERR(0, 138, __pyx_L1_error))
       free(__pyx_v_req);
 
       /* "asyncfiles/callbacks.pyx":139
@@ -4040,6 +4436,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  * 
  * 
  */
+      __Pyx_TraceLine(139,0,__PYX_ERR(0, 139, __pyx_L1_error))
       Py_DECREF(__pyx_v_future);
       goto __pyx_L5;
     }
@@ -4070,6 +4467,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         Py_DECREF(future)
  */
+        __Pyx_TraceLine(137,0,__PYX_ERR(0, 137, __pyx_L9_error))
         uv_fs_req_cleanup(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":138
@@ -4079,6 +4477,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  *         Py_DECREF(future)
  * 
  */
+        __Pyx_TraceLine(138,0,__PYX_ERR(0, 138, __pyx_L9_error))
         free(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":139
@@ -4088,6 +4487,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
  * 
  * 
  */
+        __Pyx_TraceLine(139,0,__PYX_ERR(0, 139, __pyx_L9_error))
         Py_DECREF(__pyx_v_future);
       }
       if (PY_MAJOR_VERSION >= 3) {
@@ -4102,6 +4502,18 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
       __Pyx_ErrRestore(__pyx_t_11, __pyx_t_12, __pyx_t_13);
       __pyx_t_11 = 0; __pyx_t_12 = 0; __pyx_t_13 = 0; __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       __pyx_lineno = __pyx_t_8; __pyx_clineno = __pyx_t_9; __pyx_filename = __pyx_t_10;
+      goto __pyx_L1_error;
+      __pyx_L9_error:;
+      if (PY_MAJOR_VERSION >= 3) {
+        __Pyx_XGIVEREF(__pyx_t_14);
+        __Pyx_XGIVEREF(__pyx_t_15);
+        __Pyx_XGIVEREF(__pyx_t_16);
+        __Pyx_ExceptionReset(__pyx_t_14, __pyx_t_15, __pyx_t_16);
+      }
+      __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+      __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
+      __Pyx_XDECREF(__pyx_t_13); __pyx_t_13 = 0;
+      __pyx_t_14 = 0; __pyx_t_15 = 0; __pyx_t_16 = 0;
       goto __pyx_L1_error;
     }
     __pyx_L5:;
@@ -4125,6 +4537,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_write(uv_fs_t *__pyx_v_req) {
   __Pyx_WriteUnraisable("asyncfiles.callbacks.cb_write", __pyx_clineno, __pyx_lineno, __pyx_filename, 1, 0);
   __pyx_L0:;
   __Pyx_XDECREF(__pyx_v_future);
+  __Pyx_TraceReturn(Py_None, 0);
   __Pyx_RefNannyFinishContext();
   #ifdef WITH_THREAD
   __Pyx_PyGILState_Release(__pyx_gilstate_save);
@@ -4149,6 +4562,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
   Py_ssize_t __pyx_v_chunk_len;
   Py_ssize_t __pyx_v_i;
   Py_ssize_t __pyx_v_offset;
+  __Pyx_TraceDeclarations
   __Pyx_RefNannyDeclarations
   Py_ssize_t __pyx_t_1;
   PyObject *__pyx_t_2 = NULL;
@@ -4178,6 +4592,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
   PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
   #endif
   __Pyx_RefNannySetupContext("cb_read", 0);
+  __Pyx_TraceCall("cb_read", __pyx_f[0], 143, 0, __PYX_ERR(0, 143, __pyx_L1_error));
 
   /* "asyncfiles/callbacks.pyx":145
  * cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
@@ -4186,6 +4601,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         int err = req.result
  *         object future = <object>ctx.future
  */
+  __Pyx_TraceLine(145,0,__PYX_ERR(0, 145, __pyx_L1_error))
   __pyx_v_ctx = ((struct __pyx_t_10asyncfiles_7context_FSReadContext *)__pyx_v_req->data);
 
   /* "asyncfiles/callbacks.pyx":146
@@ -4195,6 +4611,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         object future = <object>ctx.future
  *         object result_obj
  */
+  __Pyx_TraceLine(146,0,__PYX_ERR(0, 146, __pyx_L1_error))
   __pyx_t_1 = __pyx_v_req->result;
   __pyx_v_err = __pyx_t_1;
 
@@ -4205,6 +4622,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         object result_obj
  *         Py_ssize_t actual_size
  */
+  __Pyx_TraceLine(147,0,__PYX_ERR(0, 147, __pyx_L1_error))
   __pyx_t_2 = ((PyObject *)__pyx_v_ctx->future);
   __Pyx_INCREF(__pyx_t_2);
   __pyx_v_future = __pyx_t_2;
@@ -4217,6 +4635,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         if err < 0:
  *             future.set_exception(OSError(err))
  */
+  __Pyx_TraceLine(153,0,__PYX_ERR(0, 153, __pyx_L1_error))
   /*try:*/ {
 
     /* "asyncfiles/callbacks.pyx":154
@@ -4226,6 +4645,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             future.set_exception(OSError(err))
  *             return
  */
+    __Pyx_TraceLine(154,0,__PYX_ERR(0, 154, __pyx_L4_error))
     __pyx_t_3 = (__pyx_v_err < 0);
     if (__pyx_t_3) {
 
@@ -4236,6 +4656,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             return
  * 
  */
+      __Pyx_TraceLine(155,0,__PYX_ERR(0, 155, __pyx_L4_error))
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_exception); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 155, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
       __pyx_t_5 = __Pyx_PyInt_From_int(__pyx_v_err); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 155, __pyx_L4_error)
@@ -4275,6 +4696,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  * 
  *         actual_size = err
  */
+      __Pyx_TraceLine(156,0,__PYX_ERR(0, 156, __pyx_L4_error))
       goto __pyx_L3_return;
 
       /* "asyncfiles/callbacks.pyx":154
@@ -4293,6 +4715,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         if ctx.requested_size > 0 and actual_size > ctx.requested_size:
  *             actual_size = ctx.requested_size
  */
+    __Pyx_TraceLine(158,0,__PYX_ERR(0, 158, __pyx_L4_error))
     __pyx_v_actual_size = __pyx_v_err;
 
     /* "asyncfiles/callbacks.pyx":159
@@ -4302,6 +4725,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             actual_size = ctx.requested_size
  * 
  */
+    __Pyx_TraceLine(159,0,__PYX_ERR(0, 159, __pyx_L4_error))
     __pyx_t_8 = (__pyx_v_ctx->requested_size > 0);
     if (__pyx_t_8) {
     } else {
@@ -4320,6 +4744,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  * 
  *         if actual_size <= 0:
  */
+      __Pyx_TraceLine(160,0,__PYX_ERR(0, 160, __pyx_L4_error))
       __pyx_t_9 = __pyx_v_ctx->requested_size;
       __pyx_v_actual_size = __pyx_t_9;
 
@@ -4339,6 +4764,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             future.set_result(b"")
  *             return
  */
+    __Pyx_TraceLine(162,0,__PYX_ERR(0, 162, __pyx_L4_error))
     __pyx_t_3 = (__pyx_v_actual_size <= 0);
     if (__pyx_t_3) {
 
@@ -4349,6 +4775,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             return
  * 
  */
+      __Pyx_TraceLine(163,0,__PYX_ERR(0, 163, __pyx_L4_error))
       __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_result); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 163, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_4);
       __pyx_t_6 = NULL;
@@ -4382,6 +4809,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  * 
  *         if ctx.nbufs == 1:
  */
+      __Pyx_TraceLine(164,0,__PYX_ERR(0, 164, __pyx_L4_error))
       goto __pyx_L3_return;
 
       /* "asyncfiles/callbacks.pyx":162
@@ -4400,6 +4828,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             result_obj = PyBytes_FromStringAndSize(ctx.bufs[0].base, actual_size)
  *         else:
  */
+    __Pyx_TraceLine(166,0,__PYX_ERR(0, 166, __pyx_L4_error))
     __pyx_t_3 = (__pyx_v_ctx->nbufs == 1);
     if (__pyx_t_3) {
 
@@ -4410,6 +4839,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         else:
  *             result_obj = PyBytes_FromStringAndSize(NULL, actual_size)
  */
+      __Pyx_TraceLine(167,0,__PYX_ERR(0, 167, __pyx_L4_error))
       __pyx_t_2 = PyBytes_FromStringAndSize((__pyx_v_ctx->bufs[0]).base, __pyx_v_actual_size); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 167, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_2);
       __pyx_v_result_obj = __pyx_t_2;
@@ -4432,6 +4862,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             dest = PyBytes_AS_STRING(<bytes>result_obj)
  *             offset = 0
  */
+    __Pyx_TraceLine(169,0,__PYX_ERR(0, 169, __pyx_L4_error))
     /*else*/ {
       __pyx_t_2 = PyBytes_FromStringAndSize(NULL, __pyx_v_actual_size); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 169, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_2);
@@ -4445,6 +4876,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             offset = 0
  *             for i in range(ctx.nbufs):
  */
+      __Pyx_TraceLine(170,0,__PYX_ERR(0, 170, __pyx_L4_error))
       __pyx_v_dest = PyBytes_AS_STRING(__pyx_v_result_obj);
 
       /* "asyncfiles/callbacks.pyx":171
@@ -4454,6 +4886,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *             for i in range(ctx.nbufs):
  *                 chunk_len = ctx.bufs[i].len
  */
+      __Pyx_TraceLine(171,0,__PYX_ERR(0, 171, __pyx_L4_error))
       __pyx_v_offset = 0;
 
       /* "asyncfiles/callbacks.pyx":172
@@ -4463,6 +4896,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *                 chunk_len = ctx.bufs[i].len
  *                 if offset + chunk_len > actual_size:
  */
+      __Pyx_TraceLine(172,0,__PYX_ERR(0, 172, __pyx_L4_error))
       __pyx_t_9 = __pyx_v_ctx->nbufs;
       __pyx_t_10 = __pyx_t_9;
       for (__pyx_t_11 = 0; __pyx_t_11 < __pyx_t_10; __pyx_t_11+=1) {
@@ -4475,6 +4909,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *                 if offset + chunk_len > actual_size:
  *                     chunk_len = actual_size - offset
  */
+        __Pyx_TraceLine(173,0,__PYX_ERR(0, 173, __pyx_L4_error))
         __pyx_t_12 = (__pyx_v_ctx->bufs[__pyx_v_i]).len;
         __pyx_v_chunk_len = __pyx_t_12;
 
@@ -4485,6 +4920,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *                     chunk_len = actual_size - offset
  *                 if chunk_len > 0:
  */
+        __Pyx_TraceLine(174,0,__PYX_ERR(0, 174, __pyx_L4_error))
         __pyx_t_3 = ((__pyx_v_offset + __pyx_v_chunk_len) > __pyx_v_actual_size);
         if (__pyx_t_3) {
 
@@ -4495,6 +4931,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *                 if chunk_len > 0:
  *                     memcpy(dest + offset, ctx.bufs[i].base, chunk_len)
  */
+          __Pyx_TraceLine(175,0,__PYX_ERR(0, 175, __pyx_L4_error))
           __pyx_v_chunk_len = (__pyx_v_actual_size - __pyx_v_offset);
 
           /* "asyncfiles/callbacks.pyx":174
@@ -4513,6 +4950,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *                     memcpy(dest + offset, ctx.bufs[i].base, chunk_len)
  *                     offset += chunk_len
  */
+        __Pyx_TraceLine(176,0,__PYX_ERR(0, 176, __pyx_L4_error))
         __pyx_t_3 = (__pyx_v_chunk_len > 0);
         if (__pyx_t_3) {
 
@@ -4523,6 +4961,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *                     offset += chunk_len
  *                 if offset >= actual_size:
  */
+          __Pyx_TraceLine(177,0,__PYX_ERR(0, 177, __pyx_L4_error))
           (void)(memcpy((__pyx_v_dest + __pyx_v_offset), (__pyx_v_ctx->bufs[__pyx_v_i]).base, __pyx_v_chunk_len));
 
           /* "asyncfiles/callbacks.pyx":178
@@ -4532,6 +4971,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *                 if offset >= actual_size:
  *                     break
  */
+          __Pyx_TraceLine(178,0,__PYX_ERR(0, 178, __pyx_L4_error))
           __pyx_v_offset = (__pyx_v_offset + __pyx_v_chunk_len);
 
           /* "asyncfiles/callbacks.pyx":176
@@ -4550,6 +4990,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *                     break
  * 
  */
+        __Pyx_TraceLine(179,0,__PYX_ERR(0, 179, __pyx_L4_error))
         __pyx_t_3 = (__pyx_v_offset >= __pyx_v_actual_size);
         if (__pyx_t_3) {
 
@@ -4560,6 +5001,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  * 
  *         future.set_result(result_obj)
  */
+          __Pyx_TraceLine(180,0,__PYX_ERR(0, 180, __pyx_L4_error))
           goto __pyx_L13_break;
 
           /* "asyncfiles/callbacks.pyx":179
@@ -4582,6 +5024,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  * 
  *     finally:
  */
+    __Pyx_TraceLine(182,0,__PYX_ERR(0, 182, __pyx_L4_error))
     __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_future, __pyx_n_s_set_result); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 182, __pyx_L4_error)
     __Pyx_GOTREF(__pyx_t_4);
     __pyx_t_6 = NULL;
@@ -4616,6 +5059,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         __free(ctx)
  */
+  __Pyx_TraceLine(185,0,__PYX_ERR(0, 185, __pyx_L4_error))
   /*finally:*/ {
     /*normal exit:*/{
       uv_fs_req_cleanup(__pyx_v_req);
@@ -4627,6 +5071,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         __free(ctx)
  *         Py_DECREF(future)
  */
+      __Pyx_TraceLine(186,0,__PYX_ERR(0, 186, __pyx_L1_error))
       free(__pyx_v_req);
 
       /* "asyncfiles/callbacks.pyx":187
@@ -4635,6 +5080,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         __free(ctx)             # <<<<<<<<<<<<<<
  *         Py_DECREF(future)
  */
+      __Pyx_TraceLine(187,0,__PYX_ERR(0, 187, __pyx_L1_error))
       __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(__pyx_v_ctx);
 
       /* "asyncfiles/callbacks.pyx":188
@@ -4642,6 +5088,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         __free(ctx)
  *         Py_DECREF(future)             # <<<<<<<<<<<<<<
  */
+      __Pyx_TraceLine(188,0,__PYX_ERR(0, 188, __pyx_L1_error))
       Py_DECREF(__pyx_v_future);
       goto __pyx_L5;
     }
@@ -4672,6 +5119,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         __free(ctx)
  */
+        __Pyx_TraceLine(185,0,__PYX_ERR(0, 185, __pyx_L18_error))
         uv_fs_req_cleanup(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":186
@@ -4681,6 +5129,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         __free(ctx)
  *         Py_DECREF(future)
  */
+        __Pyx_TraceLine(186,0,__PYX_ERR(0, 186, __pyx_L18_error))
         free(__pyx_v_req);
 
         /* "asyncfiles/callbacks.pyx":187
@@ -4689,6 +5138,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         __free(ctx)             # <<<<<<<<<<<<<<
  *         Py_DECREF(future)
  */
+        __Pyx_TraceLine(187,0,__PYX_ERR(0, 187, __pyx_L18_error))
         __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(__pyx_v_ctx);
 
         /* "asyncfiles/callbacks.pyx":188
@@ -4696,6 +5146,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         __free(ctx)
  *         Py_DECREF(future)             # <<<<<<<<<<<<<<
  */
+        __Pyx_TraceLine(188,0,__PYX_ERR(0, 188, __pyx_L18_error))
         Py_DECREF(__pyx_v_future);
       }
       if (PY_MAJOR_VERSION >= 3) {
@@ -4711,6 +5162,18 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
       __pyx_t_16 = 0; __pyx_t_17 = 0; __pyx_t_18 = 0; __pyx_t_19 = 0; __pyx_t_20 = 0; __pyx_t_21 = 0;
       __pyx_lineno = __pyx_t_13; __pyx_clineno = __pyx_t_14; __pyx_filename = __pyx_t_15;
       goto __pyx_L1_error;
+      __pyx_L18_error:;
+      if (PY_MAJOR_VERSION >= 3) {
+        __Pyx_XGIVEREF(__pyx_t_19);
+        __Pyx_XGIVEREF(__pyx_t_20);
+        __Pyx_XGIVEREF(__pyx_t_21);
+        __Pyx_ExceptionReset(__pyx_t_19, __pyx_t_20, __pyx_t_21);
+      }
+      __Pyx_XDECREF(__pyx_t_16); __pyx_t_16 = 0;
+      __Pyx_XDECREF(__pyx_t_17); __pyx_t_17 = 0;
+      __Pyx_XDECREF(__pyx_t_18); __pyx_t_18 = 0;
+      __pyx_t_19 = 0; __pyx_t_20 = 0; __pyx_t_21 = 0;
+      goto __pyx_L1_error;
     }
     __pyx_L3_return: {
 
@@ -4721,6 +5184,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         free(req)
  *         __free(ctx)
  */
+      __Pyx_TraceLine(185,0,__PYX_ERR(0, 185, __pyx_L1_error))
       uv_fs_req_cleanup(__pyx_v_req);
 
       /* "asyncfiles/callbacks.pyx":186
@@ -4730,6 +5194,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         __free(ctx)
  *         Py_DECREF(future)
  */
+      __Pyx_TraceLine(186,0,__PYX_ERR(0, 186, __pyx_L1_error))
       free(__pyx_v_req);
 
       /* "asyncfiles/callbacks.pyx":187
@@ -4738,6 +5203,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         __free(ctx)             # <<<<<<<<<<<<<<
  *         Py_DECREF(future)
  */
+      __Pyx_TraceLine(187,0,__PYX_ERR(0, 187, __pyx_L1_error))
       __pyx_fuse_0__pyx_f_10asyncfiles_9callbacks___free(__pyx_v_ctx);
 
       /* "asyncfiles/callbacks.pyx":188
@@ -4745,6 +5211,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
  *         __free(ctx)
  *         Py_DECREF(future)             # <<<<<<<<<<<<<<
  */
+      __Pyx_TraceLine(188,0,__PYX_ERR(0, 188, __pyx_L1_error))
       Py_DECREF(__pyx_v_future);
       goto __pyx_L0;
     }
@@ -4770,6 +5237,7 @@ static void __pyx_f_10asyncfiles_9callbacks_cb_read(uv_fs_t *__pyx_v_req) {
   __pyx_L0:;
   __Pyx_XDECREF(__pyx_v_future);
   __Pyx_XDECREF(__pyx_v_result_obj);
+  __Pyx_TraceReturn(Py_None, 0);
   __Pyx_RefNannyFinishContext();
   #ifdef WITH_THREAD
   __Pyx_PyGILState_Release(__pyx_gilstate_save);
@@ -5097,6 +5565,7 @@ static CYTHON_SMALL_CODE int __pyx_pymod_exec_callbacks(PyObject *__pyx_pyinit_m
   #if CYTHON_USE_MODULE_STATE
   int pystate_addmodule_run = 0;
   #endif
+  __Pyx_TraceDeclarations
   PyObject *__pyx_t_1 = NULL;
   PyObject *__pyx_t_2 = NULL;
   int __pyx_lineno = 0;
@@ -5213,16 +5682,90 @@ if (!__Pyx_RefNanny) {
   #if defined(__Pyx_Generator_USED) || defined(__Pyx_Coroutine_USED)
   if (__Pyx_patch_abc() < 0) __PYX_ERR(0, 1, __pyx_L1_error)
   #endif
+  __Pyx_TraceCall("__Pyx_PyMODINIT_FUNC PyInit_callbacks(void)", __pyx_f[0], 1, 0, __PYX_ERR(0, 1, __pyx_L1_error));
+
+  /* "asyncfiles/callbacks.pyx":25
+ * from .context cimport FSOpenContext, FSRWContext, FSReadContext, FSWriteContext, FSCloseContext
+ * 
+ * cdef inline void __free(FSRWContext* ctx) noexcept:             # <<<<<<<<<<<<<<
+ *     cdef Py_ssize_t j
+ *     if ctx == NULL:
+ */
+  __Pyx_TraceLine(25,0,__PYX_ERR(0, 25, __pyx_L1_error))
+
+
+
+  /* "asyncfiles/callbacks.pyx":43
+ * 
+ * 
+ * cdef void cb_open(uv.uv_fs_t* req) noexcept with gil:             # <<<<<<<<<<<<<<
+ *     cdef FSOpenContext* ctx = <FSOpenContext*>req.data
+ *     cdef object future = <object>ctx.future
+ */
+  __Pyx_TraceLine(43,0,__PYX_ERR(0, 43, __pyx_L1_error))
+
+
+  /* "asyncfiles/callbacks.pyx":67
+ *         Py_DECREF(future)
+ * 
+ * cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil:             # <<<<<<<<<<<<<<
+ * 
+ *     cdef FSOpenContext* ctx = <FSOpenContext*>req.data
+ */
+  __Pyx_TraceLine(67,0,__PYX_ERR(0, 67, __pyx_L1_error))
+
+
+  /* "asyncfiles/callbacks.pyx":84
+ *         Py_DECREF(future)
+ * 
+ * cdef void cb_close(uv.uv_fs_t* req) noexcept with gil:             # <<<<<<<<<<<<<<
+ * 
+ *     cdef FSOpenContext* ctx = <FSOpenContext*>req.data
+ */
+  __Pyx_TraceLine(84,0,__PYX_ERR(0, 84, __pyx_L1_error))
+
+
+  /* "asyncfiles/callbacks.pyx":104
+ * 
+ * 
+ * cdef void cb_ftruncate(uv.uv_fs_t* req) noexcept with gil:             # <<<<<<<<<<<<<<
+ *     """Callback para operacin ftruncate"""
+ *     cdef FSOpenContext* ctx = <FSOpenContext*>req.data
+ */
+  __Pyx_TraceLine(104,0,__PYX_ERR(0, 104, __pyx_L1_error))
+
+
+  /* "asyncfiles/callbacks.pyx":122
+ * 
+ * 
+ * cdef void cb_write(uv.uv_fs_t* req) noexcept with gil:             # <<<<<<<<<<<<<<
+ *     cdef FSWriteContext* ctx = <FSWriteContext*> req.data
+ *     cdef object future = <object> ctx.future
+ */
+  __Pyx_TraceLine(122,0,__PYX_ERR(0, 122, __pyx_L1_error))
+
+
+  /* "asyncfiles/callbacks.pyx":143
+ * 
+ * 
+ * cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:             # <<<<<<<<<<<<<<
+ *     cdef:
+ *         FSReadContext* ctx = <FSReadContext*>req.data
+ */
+  __Pyx_TraceLine(143,0,__PYX_ERR(0, 143, __pyx_L1_error))
+
 
   /* "asyncfiles/callbacks.pyx":1
  * # cython: language_level=3             # <<<<<<<<<<<<<<
  * # cython: boundscheck=False
  * # cython: wraparound=False
  */
+  __Pyx_TraceLine(1,0,__PYX_ERR(0, 1, __pyx_L1_error))
   __pyx_t_2 = __Pyx_PyDict_NewPresized(0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_test, __pyx_t_2) < 0) __PYX_ERR(0, 1, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+  __Pyx_TraceReturn(Py_None, 0);
 
   /*--- Wrapped vars code ---*/
 
@@ -5449,6 +5992,140 @@ static PyObject *__Pyx_GetBuiltinName(PyObject *name) {
 #endif
     }
     return result;
+}
+
+/* Profile */
+#if CYTHON_PROFILE
+static int __Pyx_TraceSetupAndCall(PyCodeObject** code,
+                                   PyFrameObject** frame,
+                                   PyThreadState* tstate,
+                                   const char *funcname,
+                                   const char *srcfile,
+                                   int firstlineno) {
+    PyObject *type, *value, *traceback;
+    int retval;
+    if (*frame == NULL || !CYTHON_PROFILE_REUSE_FRAME) {
+        if (*code == NULL) {
+            *code = __Pyx_createFrameCodeObject(funcname, srcfile, firstlineno);
+            if (*code == NULL) return 0;
+        }
+        *frame = PyFrame_New(
+            tstate,                          /*PyThreadState *tstate*/
+            *code,                           /*PyCodeObject *code*/
+            __pyx_d,                  /*PyObject *globals*/
+            0                                /*PyObject *locals*/
+        );
+        if (*frame == NULL) return 0;
+        if (CYTHON_TRACE && (*frame)->f_trace == NULL) {
+            Py_INCREF(Py_None);
+            (*frame)->f_trace = Py_None;
+        }
+#if PY_VERSION_HEX < 0x030400B1
+    } else {
+        (*frame)->f_tstate = tstate;
+#endif
+    }
+    __Pyx_PyFrame_SetLineNumber(*frame, firstlineno);
+    retval = 1;
+    __Pyx_EnterTracing(tstate);
+    __Pyx_ErrFetchInState(tstate, &type, &value, &traceback);
+    #if CYTHON_TRACE
+    if (tstate->c_tracefunc)
+        retval = tstate->c_tracefunc(tstate->c_traceobj, *frame, PyTrace_CALL, NULL) == 0;
+    if (retval && tstate->c_profilefunc)
+    #endif
+        retval = tstate->c_profilefunc(tstate->c_profileobj, *frame, PyTrace_CALL, NULL) == 0;
+    __Pyx_LeaveTracing(tstate);
+    if (retval) {
+        __Pyx_ErrRestoreInState(tstate, type, value, traceback);
+        return __Pyx_IsTracing(tstate, 0, 0) && retval;
+    } else {
+        Py_XDECREF(type);
+        Py_XDECREF(value);
+        Py_XDECREF(traceback);
+        return -1;
+    }
+}
+static PyCodeObject *__Pyx_createFrameCodeObject(const char *funcname, const char *srcfile, int firstlineno) {
+    PyCodeObject *py_code = 0;
+#if PY_MAJOR_VERSION >= 3
+    py_code = PyCode_NewEmpty(srcfile, funcname, firstlineno);
+    if (likely(py_code)) {
+        py_code->co_flags |= CO_OPTIMIZED | CO_NEWLOCALS;
+    }
+#else
+    PyObject *py_srcfile = 0;
+    PyObject *py_funcname = 0;
+    py_funcname = PyString_FromString(funcname);
+    if (unlikely(!py_funcname)) goto bad;
+    py_srcfile = PyString_FromString(srcfile);
+    if (unlikely(!py_srcfile)) goto bad;
+    py_code = PyCode_New(
+        0,
+        0,
+        0,
+        CO_OPTIMIZED | CO_NEWLOCALS,
+        __pyx_empty_bytes,     /*PyObject *code,*/
+        __pyx_empty_tuple,     /*PyObject *consts,*/
+        __pyx_empty_tuple,     /*PyObject *names,*/
+        __pyx_empty_tuple,     /*PyObject *varnames,*/
+        __pyx_empty_tuple,     /*PyObject *freevars,*/
+        __pyx_empty_tuple,     /*PyObject *cellvars,*/
+        py_srcfile,       /*PyObject *filename,*/
+        py_funcname,      /*PyObject *name,*/
+        firstlineno,
+        __pyx_empty_bytes      /*PyObject *lnotab*/
+    );
+bad:
+    Py_XDECREF(py_srcfile);
+    Py_XDECREF(py_funcname);
+#endif
+    return py_code;
+}
+#endif
+
+/* WriteUnraisableException */
+static void __Pyx_WriteUnraisable(const char *name, int clineno,
+                                  int lineno, const char *filename,
+                                  int full_traceback, int nogil) {
+    PyObject *old_exc, *old_val, *old_tb;
+    PyObject *ctx;
+    __Pyx_PyThreadState_declare
+#ifdef WITH_THREAD
+    PyGILState_STATE state;
+    if (nogil)
+        state = PyGILState_Ensure();
+    else state = (PyGILState_STATE)0;
+#endif
+    CYTHON_UNUSED_VAR(clineno);
+    CYTHON_UNUSED_VAR(lineno);
+    CYTHON_UNUSED_VAR(filename);
+    CYTHON_MAYBE_UNUSED_VAR(nogil);
+    __Pyx_PyThreadState_assign
+    __Pyx_ErrFetch(&old_exc, &old_val, &old_tb);
+    if (full_traceback) {
+        Py_XINCREF(old_exc);
+        Py_XINCREF(old_val);
+        Py_XINCREF(old_tb);
+        __Pyx_ErrRestore(old_exc, old_val, old_tb);
+        PyErr_PrintEx(0);
+    }
+    #if PY_MAJOR_VERSION < 3
+    ctx = PyString_FromString(name);
+    #else
+    ctx = PyUnicode_FromString(name);
+    #endif
+    __Pyx_ErrRestore(old_exc, old_val, old_tb);
+    if (!ctx) {
+        PyErr_WriteUnraisable(Py_None);
+    } else {
+        PyErr_WriteUnraisable(ctx);
+        Py_DECREF(ctx);
+    }
+#ifdef WITH_THREAD
+    if (nogil)
+        PyGILState_Release(state);
+#endif
 }
 
 /* PyDictVersioning */
@@ -6013,50 +6690,6 @@ static CYTHON_INLINE void __Pyx__ExceptionReset(PyThreadState *tstate, PyObject 
   #endif
 }
 #endif
-
-/* WriteUnraisableException */
-static void __Pyx_WriteUnraisable(const char *name, int clineno,
-                                  int lineno, const char *filename,
-                                  int full_traceback, int nogil) {
-    PyObject *old_exc, *old_val, *old_tb;
-    PyObject *ctx;
-    __Pyx_PyThreadState_declare
-#ifdef WITH_THREAD
-    PyGILState_STATE state;
-    if (nogil)
-        state = PyGILState_Ensure();
-    else state = (PyGILState_STATE)0;
-#endif
-    CYTHON_UNUSED_VAR(clineno);
-    CYTHON_UNUSED_VAR(lineno);
-    CYTHON_UNUSED_VAR(filename);
-    CYTHON_MAYBE_UNUSED_VAR(nogil);
-    __Pyx_PyThreadState_assign
-    __Pyx_ErrFetch(&old_exc, &old_val, &old_tb);
-    if (full_traceback) {
-        Py_XINCREF(old_exc);
-        Py_XINCREF(old_val);
-        Py_XINCREF(old_tb);
-        __Pyx_ErrRestore(old_exc, old_val, old_tb);
-        PyErr_PrintEx(0);
-    }
-    #if PY_MAJOR_VERSION < 3
-    ctx = PyString_FromString(name);
-    #else
-    ctx = PyUnicode_FromString(name);
-    #endif
-    __Pyx_ErrRestore(old_exc, old_val, old_tb);
-    if (!ctx) {
-        PyErr_WriteUnraisable(Py_None);
-    } else {
-        PyErr_WriteUnraisable(ctx);
-        Py_DECREF(ctx);
-    }
-#ifdef WITH_THREAD
-    if (nogil)
-        PyGILState_Release(state);
-#endif
-}
 
 /* TypeImport */
 #ifndef __PYX_HAVE_RT_ImportType_3_0_12

@@ -18,14 +18,14 @@ from cpython.ref cimport Py_INCREF
 
 
 cdef class FileReader:
-    def __init__(self, IOOperation io_op, BufferManager buffer_mgr, int64_t offset, int size, bint binary):
+    def __init__(self, IOOperation io_op, BufferManager buffer_mgr, int64_t offset, int64_t size, bint binary):
         self.io_op = io_op
         self.buffer_mgr = buffer_mgr
         self.offset = offset
         self.size = size
         self.binary = binary
 
-    cdef object read(self, int length=-1):
+    cdef inline object read(self, int length=-1):
         cdef:
             object future = new_future(self.io_op.loop)
             int err
@@ -35,6 +35,10 @@ cdef class FileReader:
             Py_ssize_t nbufs
 
         total = length if length >= 0 else max(0, self.size - self.offset)
+        
+        # DEBUG: Print values to diagnose
+        import sys
+        print(f'DEBUG read: length={length}, self.size={self.size}, self.offset={self.offset}, total={total}', file=sys.stderr)
 
         if total <= 0:
             future.set_result(b"" if self.binary else "")

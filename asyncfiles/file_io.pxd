@@ -9,8 +9,7 @@ cdef class FileReader:
     cdef:
         IOOperation io_op
         BufferManager buffer_mgr
-        int64_t offset
-        int size
+        int64_t offset, size
         bint binary
 
     cdef object read(self, int length=*)

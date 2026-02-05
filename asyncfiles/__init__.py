@@ -43,13 +43,11 @@ async def open(
         if loop is None:
             raise ValueError("No event loop provided")
 
-        # Convert Path to str if necessary
         if isinstance(path, Path):
             path = str(path)
 
         file_mode = parse_mode(mode)
 
-        # Seleccionar la clase apropiada según el modo
         FileClass = BinaryFile if file_mode.binary else TextFile
 
         async with FileClass(

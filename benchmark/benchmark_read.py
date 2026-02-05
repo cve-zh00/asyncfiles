@@ -152,7 +152,7 @@ async def main():
         )
 
         # Ejecutar benchmark
-        results = await bench._run(iterations=5, max_concurrency=20)
+        results = await bench._run(iterations=10, max_concurrency=500)
         bench.print_summary(results)
 
     # Limpiar archivos de prueba

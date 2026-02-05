@@ -15,30 +15,31 @@ cdef inline uv.uv_buf_t* _make_uv_bufs(char* data_ptr, Py_ssize_t size, size_t b
     if bufs == NULL:
         return NULL
 
+    # Optimización: Buffer único - usar malloc siempre (calloc es más lento)
     if count == 1:
-
-        if size > 5242880:
-            ptr = <char*>calloc(1, size)
-        else:
-            ptr = <char*>malloc(size)
+        ptr = <char*>malloc(size)
         if ptr == NULL:
             free(bufs)
             return NULL
         bufs[0] = uv.uv_buf_init(ptr, <unsigned int>size)
         return bufs
 
+    # Optimización: Múltiples buffers
     cdef Py_ssize_t i
     cdef Py_ssize_t chunk_len
     cdef char* chunk_ptr
+    cdef Py_ssize_t remaining = size
 
     for i in range(count):
-        chunk_len = buffer_size if i < count - 1 else size - buffer_size * (count - 1)
+        # Último buffer toma solo lo que queda
+        chunk_len = buffer_size if remaining > buffer_size else remaining
         chunk_ptr = <char*>malloc(chunk_len)
         if chunk_ptr == NULL:
             _free_uv_bufs(bufs, i)
             free(bufs)
             return NULL
         bufs[i] = uv.uv_buf_init(chunk_ptr, <unsigned int>chunk_len)
+        remaining -= chunk_len
 
     return bufs
 
@@ -47,37 +48,34 @@ cdef class BufferManager:
     def __init__(self, size_t buffer_size):
         self.buffer_size = buffer_size
 
+
+
     @cython.cdivision(True)
-    cdef inline tuple calculate_buffer_layout(self, Py_ssize_t total_size):
-        cdef Py_ssize_t total_bufs = 1
-        cdef Py_ssize_t chunk_size = self.buffer_size
-
-        if total_size <= 0:
-            return (0, 0, 0)
-
-        if total_size <= self.buffer_size:
-            chunk_size = total_size
-            total_bufs = 1
-        elif total_size <= 5242880:
-            total_bufs = (total_size + self.buffer_size - 1) // self.buffer_size
-            chunk_size = self.buffer_size
-        else:
-            chunk_size = total_size
-            total_bufs = 1
-
-        return (total_size, chunk_size, total_bufs)
-
     cdef uv.uv_buf_t* create_read_buffers(self, Py_ssize_t total_size, Py_ssize_t* out_nbufs):
-        cdef Py_ssize_t actual_size, chunk_size, total_bufs
-
-        actual_size, chunk_size, total_bufs = self.calculate_buffer_layout(total_size)
-
-        if actual_size <= 0:
+        cdef Py_ssize_t chunk_size, total_bufs
+        
+        if total_size <= 0:
             out_nbufs[0] = 0
             return NULL
 
+        # Optimización 1: Buffer único para archivos pequeños (mejor cache locality)
+        if total_size <= self.buffer_size:
+            out_nbufs[0] = 1
+            return _make_uv_bufs(NULL, total_size, total_size, 1)
+        
+        # Optimización 2: Limitar nbufs para aprovechar preadv eficientemente
+        # macOS iovmax ~1024, pero menos buffers = menos overhead
+        total_bufs = (total_size + self.buffer_size - 1) // self.buffer_size
+        
+        # Limitar a 128 buffers para balance overhead vs syscalls
+        if total_bufs > 128:
+            total_bufs = 128
+            chunk_size = (total_size + 127) // 128
+        else:
+            chunk_size = self.buffer_size
+
         out_nbufs[0] = total_bufs
-        return _make_uv_bufs(NULL, actual_size, chunk_size, total_bufs)
+        return _make_uv_bufs(NULL, total_size, chunk_size, total_bufs)
 
     @cython.cdivision(True)
     cdef uv.uv_buf_t* create_write_buffers(self, char* base_ptr, Py_ssize_t total_bytes, int* out_nbufs):
