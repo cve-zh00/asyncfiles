@@ -238,7 +238,17 @@ This project is currently in active development. The API may change. Production 
 
 ## 📈 Benchmarks
 
-For detailed benchmark results and methodology, see [benchmark/README.md](benchmark/README.md).
+For detailed benchmark results and methodology, see the following reports:
+
+- [Read Benchmark Results](benchmark/results/READ_BENCHMARK.md) - Performance comparison for read operations
+- [Write Benchmark Results](benchmark/results/WRITE_BENCHMARK.md) - Performance comparison for write operations
+
+Run benchmarks yourself:
+
+```bash
+python -m benchmark.benchmark_read
+python -m benchmark.benchmark_write
+```
 
 ---
 
