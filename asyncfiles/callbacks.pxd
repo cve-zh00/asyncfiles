@@ -1,6 +1,12 @@
 from .cpython cimport PyObject
 from . cimport uv
+from .context cimport FSReadContext
 
+
+cdef class _ReadResult:
+    cdef:
+        FSReadContext* ctx
+        Py_ssize_t bytes_read
 
 
 cdef void cb_open(uv.uv_fs_t* req) noexcept with gil

@@ -63,8 +63,6 @@ def _libuv_autogen(env):
     subprocess.run(["/bin/sh", "autogen.sh"], cwd=LIBUV_DIR, env=env, check=True)
 
 
-
-
 class asyncfiles_sdist(sdist):
     """Custom sdist command that builds libuv configure"""
 
@@ -247,7 +245,21 @@ class asyncfiles_build_ext(build_ext):
 # Setup requirements
 setup_requires = []
 if "--cython-always" in sys.argv or not all(
-    os.path.exists(f"asyncfiles/{name}.c") for name in ["utils", "files", "callbacks"]
+    os.path.exists(f"asyncfiles/{name}.c")
+    for name in [
+        "utils",
+        "callbacks",
+        "memory_utils",
+        "buffer_manager",
+        "event_loop",
+        "io_operations",
+        "file_io",
+        "iterators",
+        "base_file",
+        "binary_file",
+        "text_file",
+        "files",
+    ]
 ):
     setup_requires.append(CYTHON_DEPENDENCY)
 
@@ -290,13 +302,58 @@ setup(
             extra_compile_args=MODULES_CFLAGS,
         ),
         Extension(
-            "asyncfiles.files",
-            sources=["asyncfiles/files.pyx"],
+            "asyncfiles.callbacks",
+            sources=["asyncfiles/callbacks.pyx"],
             extra_compile_args=MODULES_CFLAGS,
         ),
         Extension(
-            "asyncfiles.callbacks",
-            sources=["asyncfiles/callbacks.pyx"],
+            "asyncfiles.memory_utils",
+            sources=["asyncfiles/memory_utils.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.buffer_manager",
+            sources=["asyncfiles/buffer_manager.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.event_loop",
+            sources=["asyncfiles/event_loop.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.io_operations",
+            sources=["asyncfiles/io_operations.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.file_io",
+            sources=["asyncfiles/file_io.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.iterators",
+            sources=["asyncfiles/iterators.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.base_file",
+            sources=["asyncfiles/base_file.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.binary_file",
+            sources=["asyncfiles/binary_file.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.text_file",
+            sources=["asyncfiles/text_file.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.files",
+            sources=["asyncfiles/files.pyx"],
             extra_compile_args=MODULES_CFLAGS,
         ),
     ],

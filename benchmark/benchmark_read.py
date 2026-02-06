@@ -3,6 +3,7 @@ import hashlib
 import os
 
 import aiofiles
+import anyio
 import uvloop
 from aiofile import async_open
 
@@ -15,7 +16,7 @@ MB = 1048576
 TEST_FILES = {
     "small": ("small_test.txt", int(MB / 1024)),  # 1KB
     "medium": ("medium_test.txt", MB),  # 1MB
-    "large": ("large_test.txt", 100 * MB),  # 10MB
+    "large": ("large_test.txt", 5 * MB),  # 10MB
 }
 
 
@@ -46,21 +47,24 @@ async def verify_content_match(filename):
 
         async with open_asyncfiles(filename, mode="r") as f:
             asyncfiles_content = await f.read()
-
         # Leer con aiofiles
         async with aiofiles.open(filename, mode="r") as f:
             aiofiles_content = await f.read()
 
+        async with await anyio.open_file(filename, mode="r") as f:
+            anyio_content = await f.read()
         # Comparar contenido
         content_match = aiofile_content == asyncfiles_content == aiofiles_content
         hash_aio = calculate_hash(aiofile_content)
         hash_async = calculate_hash(asyncfiles_content)
         hash_aiofiles = calculate_hash(aiofiles_content)
-        hash_match = hash_aio == hash_async == hash_aiofiles
+        hash_anyio = calculate_hash(anyio_content)
+        hash_match = hash_aio == hash_async == hash_aiofiles == hash_anyio
         print(len(asyncfiles_content))
         return {
             "content_match": content_match,
             "hash_match": hash_match,
+            "anyio_length": len(anyio_content),
             "aiofile_length": len(aiofile_content),
             "asyncfiles_length": len(asyncfiles_content),
             "aiofiles_length": len(aiofiles_content),
@@ -76,18 +80,29 @@ async def benchmark_aiofile(filename):
     return len(contents)
 
 
+import inspect
+
+
 async def benchmark_asyncfiles(filename):
     """Benchmark usando asyncfiles"""
     async with open_asyncfiles(filename) as f:
         data = await f.read()
-
     return len(data)
+
+
+async def benchmark_anyio(filename):
+    """Benchmark usando aiofiles"""
+    async with await anyio.open_file(filename, mode="r") as f:
+        contents = await f.read()
+
+    return len(contents)
 
 
 async def benchmark_aiofiles(filename):
     """Benchmark usando aiofiles"""
     async with aiofiles.open(filename, mode="r") as f:
         contents = await f.read()
+
     return len(contents)
 
 
@@ -151,8 +166,10 @@ async def main():
             "stdlib_async", lambda f=filename: benchmark_stdlib_async(f)
         )
 
+        bench.add_implementation("anyio", lambda f=filename: benchmark_anyio(f))
+
         # Ejecutar benchmark
-        results = await bench._run(iterations=5, max_concurrency=20)
+        results = await bench._run(iterations=20, max_concurrency=10)
         bench.print_summary(results)
 
     # Limpiar archivos de prueba
