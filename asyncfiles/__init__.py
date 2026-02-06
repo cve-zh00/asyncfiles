@@ -15,7 +15,7 @@ try:
 except:
     pass
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __author__ = "Bastián García"
 __email__ = "bastiang@uc.cl"
 __all__ = ["open", "__version__"]
