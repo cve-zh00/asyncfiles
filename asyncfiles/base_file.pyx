@@ -85,7 +85,8 @@ cdef class BaseFile:
             self.size,
             self.file_mode.binary
         )
-        return reader.read(length)
+        result = reader.read(length)
+        return result
 
     cdef object _write_internal(self, bytes bdata):
         cdef FileWriter writer = FileWriter(

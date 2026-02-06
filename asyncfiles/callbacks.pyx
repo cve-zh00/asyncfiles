@@ -2,6 +2,7 @@
 from . cimport uv
 from libc.stdlib      cimport malloc, free
 from libc.string      cimport memcpy
+from libc.stdint      cimport int64_t
 
 # PyObject y manejo de referencias
 from cpython.ref      cimport Py_INCREF, Py_DECREF, Py_CLEAR
@@ -17,6 +18,26 @@ from cpython.bytearray    cimport (
 )
 
 from .context cimport FSOpenContext, FSRWContext, FSReadContext, FSWriteContext, FSCloseContext
+
+cdef inline void __free_read_ctx(FSReadContext* ctx):
+    """Free read context buffers"""
+    if ctx == NULL:
+        return
+
+    # Free single memory block
+    if ctx.buffer_mem != NULL:
+        free(ctx.buffer_mem)
+    
+    # Free the buffer array (just the array of uv_buf_t, not individual bases)
+    if ctx.bufs != NULL:
+        free(ctx.bufs)
+
+    if ctx.future != NULL:
+        Py_DECREF(<object>ctx.future)
+        ctx.future = NULL
+    
+    free(ctx)
+
 
 cdef inline void __free(FSRWContext* ctx):
     cdef Py_ssize_t j
@@ -136,47 +157,31 @@ cdef void cb_write(uv.uv_fs_t* req) noexcept with gil:
 
 
 
+cdef class _ReadResult:
+    """Lightweight wrapper to pass read context through Python"""
+    
+    def __cinit__(self):
+        self.ctx = NULL
+        self.bytes_read = 0
+
+
 cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
+    """Minimal callback - just capture result and schedule processing"""
     cdef:
         FSReadContext* ctx = <FSReadContext*>req.data
-        int err = req.result
+        int result = req.result
         object future = <object>ctx.future
-        object result_obj
-        Py_ssize_t actual_size
-        bytes py_bytes
-        char* dest
-        Py_ssize_t chunk_len, i, offset
+        _ReadResult wrapper
 
     try:
-        if err < 0:
-            future.set_exception(OSError(err))
+        if result < 0:
+            future.set_exception(OSError(result))
         else:
-            actual_size = err
-            if ctx.requested_size > 0 and actual_size > ctx.requested_size:
-                actual_size = ctx.requested_size
-
-            if actual_size <= 0 or ctx.bufs == NULL:
-                result_obj = b""
-            elif ctx.nbufs == 1:
-                result_obj = PyBytes_FromStringAndSize(ctx.bufs[0].base, actual_size)
-            else:
-                py_bytes = PyBytes_FromStringAndSize(NULL, actual_size)
-                dest = PyBytes_AS_STRING(py_bytes)
-                offset = 0
-                for i in range(ctx.nbufs):
-                    if offset >= actual_size:
-                        break
-                    chunk_len = ctx.bufs[i].len
-                    if chunk_len > actual_size - offset:
-                        chunk_len = actual_size - offset
-                    memcpy(dest + offset, ctx.bufs[i].base, chunk_len)
-                    offset += chunk_len
-                result_obj = py_bytes
-
-            future.set_result(result_obj)
-
+            # Create wrapper to pass context to post-processor
+            wrapper = _ReadResult()
+            wrapper.ctx = ctx
+            wrapper.bytes_read = result
+            future.set_result(wrapper)
     finally:
         uv.uv_fs_req_cleanup(req)
         free(req)
-        __free(ctx)
-        Py_DECREF(future)

@@ -14,6 +14,7 @@ cdef struct FSCloseContext:
 cdef struct FSReadContext:
     PyObject*   future
     uv_buf_t*   bufs
+    char*       buffer_mem       # Single allocated memory block for all buffers
     Py_ssize_t chunk_size
     Py_ssize_t nbufs
     int flags
