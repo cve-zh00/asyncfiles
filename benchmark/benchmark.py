@@ -172,9 +172,89 @@ class Benchmark:
         print(tabulate(table_data, headers=headers, tablefmt="github"))
         print()
 
-    def plot_mbps_heaviest_test(
-        self, results: Dict[str, Dict[str, List[float]]], file_size_mb: float
-    ) -> None:
+    def generate_markdown_summary(
+        self, results: Dict[str, Dict[str, List[float]]], file_size_mb: float = None
+    ) -> str:
+        """
+        Generate markdown summary of benchmark results.
+
+        Args:
+            results: Dictionary with benchmark results
+            file_size_mb: File size in MB (optional, for MB/s calculation)
+
+        Returns:
+            Markdown formatted string
+        """
+        markdown = f"# Benchmark Results: {self.name}\n\n"
+
+        # Prepare data
+        table_data = []
+        for name, metrics in results.items():
+            times = metrics["times"]
+            avg_cpus = metrics["avg_cpus"]
+            max_cpus = metrics["max_cpus"]
+            avg_memories = metrics["avg_memories"]
+            max_memories = metrics["max_memories"]
+
+            avg_time = sum(times) / len(times)
+            min_time = min(times)
+            max_time = max(times)
+            avg_cpu = sum(avg_cpus) / len(avg_cpus)
+            max_cpu = max(max_cpus)
+            avg_memory = sum(avg_memories) / len(avg_memories)
+            max_memory = max(max_memories)
+
+            row = {
+                "name": name,
+                "avg_time": avg_time,
+                "min_time": min_time,
+                "max_time": max_time,
+                "avg_cpu": avg_cpu,
+                "max_cpu": max_cpu,
+                "avg_memory": avg_memory,
+                "max_memory": max_memory,
+                "iterations": len(times),
+            }
+
+            if file_size_mb:
+                row["mbps"] = file_size_mb / avg_time if avg_time > 0 else 0
+
+            table_data.append(row)
+
+        # Sort by avg_time
+        table_data.sort(key=lambda x: x["avg_time"])
+
+        # Create markdown table
+        if file_size_mb:
+            markdown += "| Implementation | Avg Time (s) | Min Time (s) | Max Time (s) | MB/s | Avg CPU (%) | Max CPU (%) | Avg Memory (MB) | Max Memory (MB) | Iterations |\n"
+            markdown += "|----------------|--------------|--------------|--------------|------|-------------|-------------|-----------------|-----------------|------------|\n"
+            for row in table_data:
+                markdown += f"| {row['name']} | {row['avg_time']:.4f} | {row['min_time']:.4f} | {row['max_time']:.4f} | {row['mbps']:.2f} | {row['avg_cpu']:.1f} | {row['max_cpu']:.1f} | {row['avg_memory']:.1f} | {row['max_memory']:.1f} | {row['iterations']} |\n"
+        else:
+            markdown += "| Implementation | Avg Time (s) | Min Time (s) | Max Time (s) | Avg CPU (%) | Max CPU (%) | Avg Memory (MB) | Max Memory (MB) | Iterations |\n"
+            markdown += "|----------------|--------------|--------------|--------------|-------------|-------------|-----------------|-----------------|------------|\n"
+            for row in table_data:
+                markdown += f"| {row['name']} | {row['avg_time']:.4f} | {row['min_time']:.4f} | {row['max_time']:.4f} | {row['avg_cpu']:.1f} | {row['max_cpu']:.1f} | {row['avg_memory']:.1f} | {row['max_memory']:.1f} | {row['iterations']} |\n"
+
+        markdown += "\n"
+
+        # Add winner section
+        winner = table_data[0]
+        markdown += f"## 🏆 Winner: **{winner['name']}**\n\n"
+        markdown += f"- **Average Time**: {winner['avg_time']:.4f}s\n"
+        if file_size_mb:
+            markdown += f"- **Throughput**: {winner['mbps']:.2f} MB/s\n"
+        markdown += f"- **Average CPU Usage**: {winner['avg_cpu']:.1f}%\n"
+        markdown += f"- **Average Memory Usage**: {winner['avg_memory']:.1f} MB\n\n"
+
+        # Add performance comparison
+        markdown += "## Performance Comparison\n\n"
+        baseline_time = winner["avg_time"]
+        for row in table_data[1:]:
+            speedup = row["avg_time"] / baseline_time
+            markdown += f"- **{row['name']}**: {speedup:.2f}x slower than {winner['name']}\n"
+
+        return markdown
         """
         Graficar los MB/s de cada implementación para la prueba más pesada.
 

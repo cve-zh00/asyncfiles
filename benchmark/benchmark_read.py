@@ -106,20 +106,16 @@ async def benchmark_aiofiles(filename):
     return len(contents)
 
 
-async def benchmark_stdlib_async(filename):
-    """Benchmark usando stdlib con asyncio.to_thread"""
 
-    def stdlib_read():
-        with open(filename, "r") as fp:
-            return fp.read()
-
-    result = await asyncio.to_thread(stdlib_read)
-    return len(result)
 
 
 async def main():
     """Función principal del benchmark"""
-    print("=== Benchmark: asyncfiles vs aiofile vs aiofiles vs stdlib_async ===\n")
+    print("=== Benchmark: asyncfiles vs aiofile vs aiofiles vs anyio ===\n")
+
+    # Crear carpeta de resultados
+    results_dir = "benchmark/results"
+    os.makedirs(results_dir, exist_ok=True)
 
     # Crear archivos de prueba
     create_test_files()
@@ -145,13 +141,21 @@ async def main():
     else:
         print("\n✓ Todas las implementaciones devuelven contenido idéntico.\n")
 
+    # Variable para almacenar el README completo
+    full_markdown = "# Read Benchmark Results\n\n"
+    full_markdown += "This document contains the benchmark results for read operations using different async file I/O libraries.\n\n"
+    full_markdown += "## Test Configuration\n\n"
+    full_markdown += "- **Iterations**: 20\n"
+    full_markdown += "- **Concurrency**: 10\n"
+    full_markdown += "- **Libraries Tested**: asyncfiles, aiofile, aiofiles, anyio\n\n"
+
     # Benchmark para cada tamaño de archivo
     for file_type, (filename, size) in TEST_FILES.items():
         print(f"\n{'=' * 60}")
         print(f"BENCHMARK: {file_type.upper()} ({filename})")
         print(f"{'=' * 60}\n")
 
-        bench = Benchmark(f"{file_type}_file_benchmark")
+        bench = Benchmark(f"{file_type}_file_read")
 
         # Agregar implementaciones
         bench.add_implementation(
@@ -162,15 +166,23 @@ async def main():
 
         bench.add_implementation("aiofiles", lambda f=filename: benchmark_aiofiles(f))
 
-        bench.add_implementation(
-            "stdlib_async", lambda f=filename: benchmark_stdlib_async(f)
-        )
-
         bench.add_implementation("anyio", lambda f=filename: benchmark_anyio(f))
 
         # Ejecutar benchmark
         results = await bench._run(iterations=20, max_concurrency=10)
         bench.print_summary(results)
+
+        # Agregar resultados al markdown
+        file_size_mb = size / (1024 * 1024)
+        section_md = bench.generate_markdown_summary(results, file_size_mb)
+        full_markdown += f"\n---\n\n{section_md}\n"
+
+    # Guardar README.md
+    readme_path = os.path.join(results_dir, "READ_BENCHMARK.md")
+    with open(readme_path, "w") as f:
+        f.write(full_markdown)
+
+    print(f"\n✓ Resultados guardados en: {readme_path}")
 
     # Limpiar archivos de prueba
     print("\nLimpiando archivos de prueba...")

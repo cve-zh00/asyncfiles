@@ -3,6 +3,7 @@ import hashlib
 import os
 
 import aiofiles
+import anyio
 from aiofile import async_open
 
 from asyncfiles import open as open_asyncfiles
@@ -12,7 +13,7 @@ MB = 1048576
 TEST_CONFIGS = {
     "small": ("write_small_test.txt", int(MB / 1024)),  # 1KB
     "medium": ("write_medium_test.txt", MB),  # 1MB
-    "large": ("write_large_test.txt", 100 * MB),  # 10MB
+    "large": ("write_large_test.txt", 10 * MB),  # 10MB
 }
 
 
@@ -70,22 +71,17 @@ async def benchmark_aiofiles_write(filename, content):
     return len(content)
 
 
-async def benchmark_stdlib_async_write(filename, content):
-    """Benchmark escritura usando stdlib con asyncio.to_thread"""
-
-    def stdlib_write():
-        with open(filename, "w") as fp:
-            fp.write(content)
-        return len(content)
-
-    result = await asyncio.to_thread(stdlib_write)
-    return result
+async def benchmark_anyio_write(filename, content):
+    """Benchmark escritura usando anyio"""
+    async with await anyio.open_file(filename, mode="w") as f:
+        await f.write(content)
+    return len(content)
 
 
 async def main():
     """Función principal del benchmark de escritura"""
     print(
-        "=== Benchmark ESCRITURA: asyncfiles vs aiofile vs aiofiles vs stdlib_async ===\n"
+        "=== Benchmark ESCRITURA: asyncfiles vs aiofile vs aiofiles vs anyio ===\n"
     )
 
     # Variable para almacenar los resultados de la prueba más pesada
@@ -118,12 +114,12 @@ async def main():
         )
 
         bench.add_implementation(
-            "stdlib_async",
-            lambda f=filename, c=content: benchmark_stdlib_async_write(f, c),
+            "anyio",
+            lambda f=filename, c=content: benchmark_anyio_write(f, c),
         )
 
         # Ejecutar benchmark
-        results = await bench._run(iterations=5, max_concurrency=10)
+        results = await bench._run(iterations=20, max_concurrency=10)
         bench.print_summary(results)
 
         # Guardar resultados de la prueba más pesada
