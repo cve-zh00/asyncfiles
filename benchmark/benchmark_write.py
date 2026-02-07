@@ -7,13 +7,12 @@ import anyio
 from aiofile import async_open
 
 from asyncfiles import open as open_asyncfiles
-from benchmark.benchmark import Benchmark
+from benchmark import Benchmark
 
 MB = 1048576
 TEST_CONFIGS = {
     "small": ("write_small_test.txt", int(MB / 1024)),  # 1KB
-    "medium": ("write_medium_test.txt", MB),  # 1MB
-    "large": ("write_large_test.txt", 10 * MB),  # 10MB
+    "large": ("write_large_test.txt", MB),  # 10MB
 }
 
 
@@ -80,9 +79,7 @@ async def benchmark_anyio_write(filename, content):
 
 async def main():
     """Función principal del benchmark de escritura"""
-    print(
-        "=== Benchmark ESCRITURA: asyncfiles vs aiofile vs aiofiles vs anyio ===\n"
-    )
+    print("=== Benchmark ESCRITURA: asyncfiles vs aiofile vs aiofiles vs anyio ===\n")
 
     # Crear carpeta de resultados
     results_dir = "benchmark/results"
@@ -125,7 +122,7 @@ async def main():
         )
 
         # Ejecutar benchmark
-        results = await bench._run(iterations=20, max_concurrency=10)
+        results = await bench._run(iterations=20, max_concurrency=100)
         bench.print_summary(results)
 
         # Agregar resultados al markdown

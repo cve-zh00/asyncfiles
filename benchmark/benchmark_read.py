@@ -8,7 +8,7 @@ import uvloop
 from aiofile import async_open
 
 from asyncfiles import open as open_asyncfiles
-from benchmark.benchmark import Benchmark
+from benchmark import Benchmark
 
 # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
@@ -104,9 +104,6 @@ async def benchmark_aiofiles(filename):
         contents = await f.read()
 
     return len(contents)
-
-
-
 
 
 async def main():
