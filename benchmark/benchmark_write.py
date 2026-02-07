@@ -3,6 +3,7 @@ import hashlib
 import os
 
 import aiofiles
+import anyio
 from aiofile import async_open
 
 from asyncfiles import open as open_asyncfiles
@@ -11,8 +12,7 @@ from benchmark import Benchmark
 MB = 1048576
 TEST_CONFIGS = {
     "small": ("write_small_test.txt", int(MB / 1024)),  # 1KB
-    "medium": ("write_medium_test.txt", MB),  # 1MB
-    "large": ("write_large_test.txt", 100 * MB),  # 10MB
+    "large": ("write_large_test.txt", MB),  # 10MB
 }
 
 
@@ -70,29 +70,28 @@ async def benchmark_aiofiles_write(filename, content):
     return len(content)
 
 
-async def benchmark_stdlib_async_write(filename, content):
-    """Benchmark escritura usando stdlib con asyncio.to_thread"""
-
-    def stdlib_write():
-        with open(filename, "w") as fp:
-            fp.write(content)
-        return len(content)
-
-    result = await asyncio.to_thread(stdlib_write)
-    return result
+async def benchmark_anyio_write(filename, content):
+    """Benchmark escritura usando anyio"""
+    async with await anyio.open_file(filename, mode="w") as f:
+        await f.write(content)
+    return len(content)
 
 
 async def main():
     """Función principal del benchmark de escritura"""
-    print(
-        "=== Benchmark ESCRITURA: asyncfiles vs aiofile vs aiofiles vs stdlib_async ===\n"
-    )
+    print("=== Benchmark ESCRITURA: asyncfiles vs aiofile vs aiofiles vs anyio ===\n")
 
-    # Variable para almacenar los resultados de la prueba más pesada
-    heaviest_results = None
-    heaviest_size_mb = 0
-    heaviest_name = None
-    heaviest_bench = None
+    # Crear carpeta de resultados
+    results_dir = "benchmark/results"
+    os.makedirs(results_dir, exist_ok=True)
+
+    # Variable para almacenar el README completo
+    full_markdown = "# Write Benchmark Results\n\n"
+    full_markdown += "This document contains the benchmark results for write operations using different async file I/O libraries.\n\n"
+    full_markdown += "## Test Configuration\n\n"
+    full_markdown += "- **Iterations**: 20\n"
+    full_markdown += "- **Concurrency**: 10\n"
+    full_markdown += "- **Libraries Tested**: asyncfiles, aiofile, aiofiles, anyio\n\n"
 
     # Benchmark para cada tamaño de archivo
     for file_type, (filename, size) in TEST_CONFIGS.items():
@@ -102,7 +101,7 @@ async def main():
 
         content = generate_test_content(size)
 
-        bench = Benchmark(f"{file_type}_file_write_benchmark")
+        bench = Benchmark(f"{file_type}_file_write")
 
         # Agregar implementaciones
         bench.add_implementation(
@@ -118,21 +117,18 @@ async def main():
         )
 
         bench.add_implementation(
-            "stdlib_async",
-            lambda f=filename, c=content: benchmark_stdlib_async_write(f, c),
+            "anyio",
+            lambda f=filename, c=content: benchmark_anyio_write(f, c),
         )
 
         # Ejecutar benchmark
-        results = await bench._run(iterations=5, max_concurrency=10)
+        results = await bench._run(iterations=20, max_concurrency=100)
         bench.print_summary(results)
 
-        # Guardar resultados de la prueba más pesada
-        size_mb = size / (1024 * 1024)  # Convertir bytes a MB
-        if size_mb > heaviest_size_mb:
-            heaviest_size_mb = size_mb
-            heaviest_results = results
-            heaviest_name = file_type
-            heaviest_bench = bench
+        # Agregar resultados al markdown
+        file_size_mb = size / (1024 * 1024)
+        section_md = bench.generate_markdown_summary(results, file_size_mb)
+        full_markdown += f"\n---\n\n{section_md}\n"
 
         # Verificar contenido escrito (usar la última versión)
         print(f"\nVerificando contenido escrito en {filename}...")
@@ -148,12 +144,12 @@ async def main():
                 print(f"    Esperado: {verification['expected_length']} chars")
                 print(f"    Escrito: {verification['written_length']} chars")
 
-    # Generar gráfico para la prueba más pesada
-    if heaviest_results and heaviest_bench:
-        print(f"\n{'=' * 60}")
-        print(f"GENERANDO GRÁFICO MB/S PARA: {heaviest_name.upper()}")
-        print(f"{'=' * 60}\n")
-        heaviest_bench.plot_mbps_heaviest_test(heaviest_results, heaviest_size_mb)
+    # Guardar README.md
+    readme_path = os.path.join(results_dir, "WRITE_BENCHMARK.md")
+    with open(readme_path, "w") as f:
+        f.write(full_markdown)
+
+    print(f"\n✓ Resultados guardados en: {readme_path}")
 
     # Limpiar archivos de prueba
     print("\n\nLimpiando archivos de prueba...")

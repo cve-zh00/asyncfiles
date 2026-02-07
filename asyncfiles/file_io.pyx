@@ -110,7 +110,7 @@ cdef class FileReader:
             Py_ssize_t nbufs
             uv.uv_buf_t* p_uvbufs
             Py_ssize_t chunk_size = self.buffer_mgr.buffer_size
-            Py_ssize_t i, j, chunk_len
+            Py_ssize_t i, chunk_len
             char* chunk_ptr
             Py_ssize_t max_bufs = 64
             Py_ssize_t large_threshold = 10485760

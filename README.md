@@ -42,7 +42,7 @@ async def main():
     async with open('example.txt', 'r') as f:
         content = await f.read()
         print(content)
-    
+
     # Write to a file
     async with open('output.txt', 'w') as f:
         await f.write('Hello, async world!')
@@ -108,13 +108,13 @@ async def process_files():
     async def read_file(path):
         async with open(path, 'r') as f:
             return await f.read()
-    
+
     results = await asyncio.gather(
         read_file('file1.txt'),
         read_file('file2.txt'),
         read_file('file3.txt'),
     )
-    
+
     return results
 
 asyncio.run(process_files())
@@ -147,6 +147,11 @@ Benchmark Results (10MB file):
 ├── aiofiles:      112.6 ms
 └── stdlib+thread: 156.3 ms
 ```
+
+For detailed benchmark results and methodology, see the following reports:
+
+- [Read Benchmark Results](benchmark/results/READ_BENCHMARK.md) - Performance comparison for read operations
+- [Write Benchmark Results](benchmark/results/WRITE_BENCHMARK.md) - Performance comparison for write operations
 
 Run benchmarks yourself:
 
@@ -221,25 +226,21 @@ Special thanks to:
 This project is currently in active development. The API may change. Production use is not recommended yet.
 
 ### Roadmap
-- [ ] Iteration support
+- [x] Iteration support
 - [X] Comprehensive test suite
-- [ ] Complete documentation
+- [] Complete documentation
 - [x] Binary mode support
 - [x] Seek/tell operations
-- [ ] File metadata operations
-- [ ] PyPI package release
-- [ ] CI/CD pipeline
-- [ ] Performance optimizations
-- [ ] More comprehensive benchmarks
+- [x] File metadata operations
+- [x] PyPI package release
+- [x] CI/CD pipeline
+- [x] Performance optimizations
+- [x] More comprehensive benchmarks
+- [ ] Integration with io_uring?
 
 ## 💬 Support
 
 - **Issues**: [GitHub Issues](https://github.com/cve-zh00/asyncfiles/issues)
-
-## 📈 Benchmarks
-
-For detailed benchmark results and methodology, see [benchmark/README.md](benchmark/README.md).
-
 ---
 
 **Made with ❤️ and ⚡ by Zh00**
