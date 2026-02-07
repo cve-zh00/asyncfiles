@@ -10,7 +10,7 @@
 
 - **True Async I/O**: Built directly on libuv's async filesystem operations
 - **High Performance**: Cython-optimized with zero-copy buffer operations
-- **Non-blocking**: No thread pools - pure async I/O all the way down
+- **Non-blocking**: Uses libuv async filesystem APIs (backed by libuv thread pool)
 - **Simple API**: Familiar async context manager interface
 - **Type Hints**: Full typing support for better IDE integration
 - **Memory Efficient**: Configurable buffer sizes for optimal memory usage
