@@ -49,7 +49,7 @@ jobs:
       - name: Run tests
         run: |
           python setup.py build_ext --inplace
-          pytest tests/ -v || echo "Tests completed"
+          pytest tests/ -v 
 
       - name: Python Semantic Release
         id: release
