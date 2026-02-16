@@ -47,8 +47,8 @@ docs:
 
 
 test:
-	PYTHONASYNCIODEBUG=1 $(PYTHON) -m unittest discover -v tests
-	$(PYTHON) -m unittest discover -v tests
+	PYTHONASYNCIODEBUG=1 $(PYTHON) -m pytest tests/ -v
+	$(PYTHON) -m pytest tests/ -v
 
 
 testinstalled:
