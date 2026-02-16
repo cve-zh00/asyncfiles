@@ -1,0 +1,73 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - ci
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.8"
+          - "3.9"
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+        os: [ubuntu-latest, macos-latest]
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+          submodules: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install macOS deps
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install gnu-sed libtool autoconf automake
+
+      - name: Install Ubuntu deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip setuptools wheel
+          pip install Cython~=3.0
+          pip install pytest pytest-asyncio
+
+      - name: Test
+        run: |
+          make compile
+          make test
+
+      - name: Test (debug build)
+        run: |
+          make distclean && make debug && make test
+
+  regression-tests:
+    name: "Regression Tests"
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo OK

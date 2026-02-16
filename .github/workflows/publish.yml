@@ -1,71 +1,121 @@
-name: Semantic Release
+name: Release
 
 on:
   push:
-    branches:
-      - main
-      - master
+    tags:
+      - "v*"
 
 jobs:
-  release:
-    name: Semantic Release
-    runs-on: ubuntu-latest
-    concurrency: release
-    environment:
-      name: pypi
-    permissions:
-      id-token: write
-      contents: write
-
+  build-sdist:
+    runs-on: ubuntu-22.04
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 50
+          submodules: true
 
-      - name: Initialize submodules
-        run: |
-          git submodule init vendor/libuv
-          git submodule update vendor/libuv
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.x"
 
-      - name: Install system dependencies
+      - name: Build source distribution
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential autoconf automake libtool
+          python -m pip install --upgrade setuptools wheel pip Cython~=3.0
+          python setup.py sdist
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel build
-          pip install python-semantic-release
-          pip install Cython~=3.0
-          pip install pytest pytest-asyncio
-
-      - name: Run tests
-        run: |
-          python setup.py build_ext --inplace
-          pytest tests/ -v 
-
-      - name: Python Semantic Release
-        id: release
-        uses: python-semantic-release/python-semantic-release@master
+      - uses: actions/upload-artifact@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          name: dist-sdist
+          path: dist/*.tar.*
 
+  build-wheels:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, ubuntu-22.04-arm]
+        python:
+          - "cp38"
+          - "cp39"
+          - "cp310"
+          - "cp311"
+          - "cp312"
+          - "cp313"
+        cibw_arch: ["x86_64", "aarch64", "universal2"]
+        exclude:
+          - os: ubuntu-latest
+            cibw_arch: universal2
+          - os: ubuntu-latest
+            cibw_arch: aarch64
+          - os: macos-latest
+            cibw_arch: aarch64
+          - os: ubuntu-22.04-arm
+            cibw_arch: x86_64
+          - os: ubuntu-22.04-arm
+            cibw_arch: universal2
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+          submodules: true
+
+      - name: Install macOS deps
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew install gnu-sed libtool autoconf automake
+
+      - uses: pypa/cibuildwheel@v2
+        env:
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_BUILD: ${{ matrix.python }}-*
+          CIBW_ARCHS: ${{ matrix.cibw_arch }}
+          CIBW_TEST_SKIP: "*universal2:arm64"
+          CIBW_BEFORE_BUILD_LINUX: >-
+            yum install -y autoconf automake libtool ||
+            apt-get update && apt-get install -y autoconf automake libtool
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-wheels-${{ matrix.os }}-${{ matrix.python }}-${{ matrix.cibw_arch }}
+          path: wheelhouse/*.whl
+
+  publish:
+    needs: [build-sdist, build-wheels]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+          submodules: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist/
+
+
+      - name: Publish Github Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         if: steps.release.outputs.released == 'true'
         with:
           verbose: true
-
-      - name: Publish to GitHub Release
-        uses: python-semantic-release/upload-to-gh-release@main
-        if: steps.release.outputs.released == 'true'
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ steps.release.outputs.tag }}
