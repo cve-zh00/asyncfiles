@@ -1,8 +1,16 @@
-from os import PathLike
-from typing import TypeAlias, Literal
+from __future__ import annotations
 
-StrOrBytesPath: TypeAlias = str | bytes | PathLike[str] | PathLike[bytes]  # stable
-FileDescriptorOrPath: TypeAlias = int | StrOrBytesPath | PathLike[str]
+import sys
+from os import PathLike
+from typing import Union
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias, Literal
+else:
+    from typing_extensions import TypeAlias, Literal
+
+StrOrBytesPath: TypeAlias = Union[str, bytes, "PathLike[str]", "PathLike[bytes]"]
+FileDescriptorOrPath: TypeAlias = Union[int, StrOrBytesPath, "PathLike[str]"]
 OpenTextModeUpdating: TypeAlias = Literal[
     "r+",
     "+r",
@@ -39,7 +47,7 @@ OpenTextModeUpdating: TypeAlias = Literal[
 ]
 OpenTextModeWriting: TypeAlias = Literal["w", "wt", "tw", "a", "at", "ta", "x", "xt", "tx"]
 OpenTextModeReading: TypeAlias = Literal["r", "rt", "tr", "U", "rU", "Ur", "rtU", "rUt", "Urt", "trU", "tUr", "Utr"]
-OpenTextMode: TypeAlias = OpenTextModeUpdating | OpenTextModeWriting | OpenTextModeReading
+OpenTextMode: TypeAlias = Union[OpenTextModeUpdating, OpenTextModeWriting, OpenTextModeReading]
 OpenBinaryModeUpdating: TypeAlias = Literal[
     "rb+",
     "r+b",
@@ -68,4 +76,4 @@ OpenBinaryModeUpdating: TypeAlias = Literal[
 ]
 OpenBinaryModeWriting: TypeAlias = Literal["wb", "bw", "ab", "ba", "xb", "bx"]
 OpenBinaryModeReading: TypeAlias = Literal["rb", "br", "rbU", "rUb", "Urb", "brU", "bUr", "Ubr"]
-OpenBinaryMode: TypeAlias = OpenBinaryModeUpdating | OpenBinaryModeReading | OpenBinaryModeWriting
+OpenBinaryMode: TypeAlias = Union[OpenBinaryModeUpdating, OpenBinaryModeReading, OpenBinaryModeWriting]

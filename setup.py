@@ -121,10 +121,6 @@ class asyncfiles_build_ext(build_ext):
                         need_cythonize = True
 
         if need_cythonize:
-            import pkg_resources
-
-            # Double check Cython presence in case setup_requires
-            # didn't go into effect
             try:
                 import Cython
             except ImportError:
@@ -134,8 +130,11 @@ class asyncfiles_build_ext(build_ext):
                     )
                 )
 
-            cython_dep = pkg_resources.Requirement.parse(CYTHON_DEPENDENCY)
-            if Cython.__version__ not in cython_dep:
+            from packaging.specifiers import SpecifierSet
+            from packaging.version import Version
+
+            spec = SpecifierSet(CYTHON_DEPENDENCY.replace("Cython", ""))
+            if Version(Cython.__version__) not in spec:
                 raise RuntimeError(
                     "asyncfiles requires {}, got Cython=={}".format(
                         CYTHON_DEPENDENCY, Cython.__version__
@@ -268,7 +267,7 @@ setup(
     name="py-asyncfiles",
     version=VERSION,
     description="High-performance async file I/O library built on libuv",
-    long_description=open("README.md").read() if os.path.exists("README.md") else "",
+    long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     author="bastian garcia",
     author_email="bastiang@uc.cl",
@@ -358,7 +357,9 @@ setup(
         ),
     ],
     setup_requires=setup_requires,
-    install_requires=[],
+    install_requires=[
+        "typing_extensions>=4.0; python_version < '3.10'",
+    ],
     extras_require={
         "dev": [
             "pytest>=7.0",

@@ -54,7 +54,7 @@ jobs:
         run: |
           pip install --upgrade pip setuptools wheel
           pip install Cython~=3.0
-          pip install pytest pytest-asyncio
+          pip install pytest pytest-asyncio typing_extensions
 
       - name: Test
         run: |
