@@ -6,7 +6,6 @@ import re
 import shutil
 import subprocess
 import sys
-from termios import VEOF
 
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
@@ -241,28 +240,6 @@ class asyncfiles_build_ext(build_ext):
         super().build_extensions()
 
 
-# Setup requirements
-setup_requires = []
-if "--cython-always" in sys.argv or not all(
-    os.path.exists(f"asyncfiles/{name}.c")
-    for name in [
-        "utils",
-        "callbacks",
-        "memory_utils",
-        "buffer_manager",
-        "event_loop",
-        "io_operations",
-        "file_io",
-        "iterators",
-        "base_file",
-        "binary_file",
-        "text_file",
-        "files",
-    ]
-):
-    setup_requires.append(CYTHON_DEPENDENCY)
-
-
 setup(
     name="py-asyncfiles",
     version=VERSION,
@@ -275,23 +252,6 @@ setup(
     license="MIT",
     platforms=["POSIX"],
     python_requires=">=3.8",
-    classifiers=[
-        "Development Status :: 3 - Alpha",
-        "Intended Audience :: Developers",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: POSIX",
-        "Operating System :: MacOS",
-        "Operating System :: Unix",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
-        "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: Implementation :: CPython",
-        "Topic :: Software Development :: Libraries :: Python Modules",
-        "Framework :: AsyncIO",
-    ],
     packages=["asyncfiles"],
     cmdclass={"sdist": asyncfiles_sdist, "build_ext": asyncfiles_build_ext},
     ext_modules=[
@@ -356,17 +316,6 @@ setup(
             extra_compile_args=MODULES_CFLAGS,
         ),
     ],
-    setup_requires=setup_requires,
-    install_requires=[
-        "typing_extensions>=4.0; python_version < '3.10'",
-    ],
-    extras_require={
-        "dev": [
-            "pytest>=7.0",
-            "pytest-asyncio>=0.21.0",
-            CYTHON_DEPENDENCY,
-        ],
-    },
     include_package_data=True,
     zip_safe=False,
 )
