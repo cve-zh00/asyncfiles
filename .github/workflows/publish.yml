@@ -3,9 +3,7 @@ name: Release
 on:
   pull_request:
     branches:
-      - "master"
-      - "ci"
-      - "[0-9]+.[0-9x]+*"
+      - "main"
     paths:
       - "asyncfiles/_version.py"
 
