@@ -186,7 +186,7 @@ make test
 make test
 
 # Run with async debug mode
-PYTHONASYNCIODEBUG=1 python -m unittest discover -v tests
+PYTHONASYNCIODEBUG=1 python -m pytest tests/ -v
 
 # Test installed package
 make testinstalled
