@@ -78,7 +78,7 @@ cdef class BaseFile:
     cpdef tell(self):
         return self.offset
 
-    cdef object _read_internal(self, int length=-1):
+    cdef object _read_internal(self, Py_ssize_t length=-1):
         cdef FileReader reader = FileReader(
             self.io_op,
             self.buffer_mgr,

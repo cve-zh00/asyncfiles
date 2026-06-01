@@ -61,7 +61,7 @@ cdef inline bytes _process_read_result(_ReadResult wrapper) noexcept:
 
         return result_obj
     finally:
-        # Cleanup context
+        # Cleanup context and mark as consumed so __dealloc__ won't double-free
         if ctx.buffer_mem != NULL:
             free(ctx.buffer_mem)
         if ctx.bufs != NULL:
@@ -69,6 +69,7 @@ cdef inline bytes _process_read_result(_ReadResult wrapper) noexcept:
         if ctx.future != NULL:
             Py_DECREF(<object>ctx.future)
         free(ctx)
+        wrapper.ctx = NULL
 
 
 cdef class FileReader:
@@ -80,7 +81,7 @@ cdef class FileReader:
         self.binary = binary
 
     @cython.cdivision(True)
-    async def read(self, int length=-1):
+    async def read(self, Py_ssize_t length=-1):
         """Read with post-callback processing"""
         cdef:
             object future_result
@@ -100,7 +101,7 @@ cdef class FileReader:
 
         return result
     @cython.cdivision(True)
-    cdef object _read_internal(self, int length=-1):
+    cdef object _read_internal(self, Py_ssize_t length=-1):
         cdef:
             object future = new_future(self.io_op.loop)
             int err

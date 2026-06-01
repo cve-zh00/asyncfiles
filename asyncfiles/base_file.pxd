@@ -23,5 +23,5 @@ cdef class BaseFile:
 
     cpdef seek(self, int64_t offset, int whence=*)
     cpdef tell(self)
-    cdef object _read_internal(self, int length=*)
+    cdef object _read_internal(self, Py_ssize_t length=*)
     cdef object _write_internal(self, bytes bdata)

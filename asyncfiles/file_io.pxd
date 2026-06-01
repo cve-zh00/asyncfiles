@@ -12,7 +12,7 @@ cdef class FileReader:
         int64_t offset, size
         bint binary
 
-    cdef object _read_internal(self, int length=*)
+    cdef object _read_internal(self, Py_ssize_t length=*)
 
 
 cdef class FileWriter:

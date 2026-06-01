@@ -12,8 +12,10 @@ cdef class TextFile(BaseFile):
     def __aiter__(self):
         return BaseFileIterator(self, 8192, False)
 
-    async def read(self, int length=-1):
-        cdef Py_ssize_t total_to_read = length if length >= 0 else self.size - self.offset
+    async def read(self, Py_ssize_t length=-1):
+        cdef:
+            Py_ssize_t total_to_read = length if length >= 0 else self.size - self.offset
+            int extra
 
         if total_to_read <= 0:
             return ""
@@ -23,12 +25,30 @@ cdef class TextFile(BaseFile):
         if self.offset >= 0:
             self.offset += len(data)
 
-        return data.decode("utf-8")
+        # Handle incomplete multibyte UTF-8 at boundary
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError:
+            # The read may have cut a multibyte code point.
+            # Read up to 3 more bytes to complete it.
+            for extra in range(1, 4):
+                extra_data = await self._read_internal(extra)
+                if not extra_data:
+                    break
+                data += extra_data
+                if self.offset >= 0:
+                    self.offset += len(extra_data)
+                try:
+                    return data.decode("utf-8")
+                except UnicodeDecodeError:
+                    continue
+            # Still broken — raise the original error
+            return data.decode("utf-8")
 
     async def write(self, str data):
         cdef:
             bytes bdata
-            int result
+            Py_ssize_t result
 
         bdata = PyUnicode_AsUTF8String(data)
         if bdata is None:

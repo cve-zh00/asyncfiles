@@ -15,23 +15,23 @@ This document contains the benchmark results for read operations using different
 
 | Implementation | Avg Time (s) | Min Time (s) | Max Time (s) | MB/s | Avg CPU (%) | Max CPU (%) | Avg Memory (MB) | Max Memory (MB) | Iterations |
 |----------------|--------------|--------------|--------------|------|-------------|-------------|-----------------|-----------------|------------|
-| asyncfiles | 0.0011 | 0.0006 | 0.0024 | 0.86 | 0.0 | 0.0 | 105.3 | 106.5 | 20 |
-| aiofiles | 0.0044 | 0.0017 | 0.0065 | 0.22 | 0.0 | 0.0 | 71.7 | 71.9 | 20 |
-| anyio | 0.0057 | 0.0023 | 0.0091 | 0.17 | 0.0 | 0.0 | 68.7 | 72.0 | 20 |
-| aiofile | 0.0077 | 0.0026 | 0.0123 | 0.13 | 0.0 | 0.0 | 86.4 | 101.9 | 20 |
+| asyncfiles | 0.0017 | 0.0004 | 0.0028 | 0.57 | 0.0 | 0.0 | 89.6 | 96.5 | 100 |
+| aiofiles | 0.0051 | 0.0016 | 0.0082 | 0.19 | 0.0 | 0.0 | 62.0 | 62.2 | 100 |
+| anyio | 0.0058 | 0.0019 | 0.0090 | 0.17 | 0.0 | 0.0 | 62.3 | 62.3 | 100 |
+| aiofile | 0.0077 | 0.0025 | 0.0163 | 0.13 | 0.0 | 0.0 | 70.0 | 78.4 | 100 |
 
 ## 🏆 Winner: **asyncfiles**
 
-- **Average Time**: 0.0011s
-- **Throughput**: 0.86 MB/s
+- **Average Time**: 0.0017s
+- **Throughput**: 0.57 MB/s
 - **Average CPU Usage**: 0.0%
-- **Average Memory Usage**: 105.3 MB
+- **Average Memory Usage**: 89.6 MB
 
 ## Performance Comparison
 
-- **aiofiles**: 3.91x slower than asyncfiles
-- **anyio**: 5.03x slower than asyncfiles
-- **aiofile**: 6.77x slower than asyncfiles
+- **aiofiles**: 2.99x slower than asyncfiles
+- **anyio**: 3.41x slower than asyncfiles
+- **aiofile**: 4.51x slower than asyncfiles
 
 
 ---
@@ -40,23 +40,23 @@ This document contains the benchmark results for read operations using different
 
 | Implementation | Avg Time (s) | Min Time (s) | Max Time (s) | MB/s | Avg CPU (%) | Max CPU (%) | Avg Memory (MB) | Max Memory (MB) | Iterations |
 |----------------|--------------|--------------|--------------|------|-------------|-------------|-----------------|-----------------|------------|
-| asyncfiles | 0.0050 | 0.0023 | 0.0077 | 200.42 | 0.0 | 0.0 | 86.9 | 92.0 | 20 |
-| anyio | 0.0070 | 0.0037 | 0.0120 | 143.48 | 0.0 | 0.0 | 107.2 | 107.2 | 20 |
-| aiofiles | 0.0090 | 0.0032 | 0.0162 | 111.14 | 0.0 | 0.0 | 107.2 | 107.2 | 20 |
-| aiofile | 0.0108 | 0.0041 | 0.0180 | 92.94 | 0.0 | 0.0 | 102.5 | 107.2 | 20 |
+| asyncfiles | 0.0058 | 0.0017 | 0.0147 | 171.68 | 0.0 | 0.0 | 94.6 | 99.4 | 100 |
+| aiofiles | 0.0058 | 0.0028 | 0.0155 | 171.42 | 0.0 | 0.0 | 77.2 | 91.7 | 100 |
+| anyio | 0.0070 | 0.0032 | 0.0152 | 142.47 | 0.0 | 0.0 | 75.5 | 75.5 | 100 |
+| aiofile | 0.0100 | 0.0041 | 0.0217 | 100.11 | 0.0 | 0.0 | 110.9 | 115.5 | 100 |
 
 ## 🏆 Winner: **asyncfiles**
 
-- **Average Time**: 0.0050s
-- **Throughput**: 200.42 MB/s
+- **Average Time**: 0.0058s
+- **Throughput**: 171.68 MB/s
 - **Average CPU Usage**: 0.0%
-- **Average Memory Usage**: 86.9 MB
+- **Average Memory Usage**: 94.6 MB
 
 ## Performance Comparison
 
-- **anyio**: 1.40x slower than asyncfiles
-- **aiofiles**: 1.80x slower than asyncfiles
-- **aiofile**: 2.16x slower than asyncfiles
+- **aiofiles**: 1.00x slower than asyncfiles
+- **anyio**: 1.21x slower than asyncfiles
+- **aiofile**: 1.72x slower than asyncfiles
 
 
 ---
@@ -65,21 +65,21 @@ This document contains the benchmark results for read operations using different
 
 | Implementation | Avg Time (s) | Min Time (s) | Max Time (s) | MB/s | Avg CPU (%) | Max CPU (%) | Avg Memory (MB) | Max Memory (MB) | Iterations |
 |----------------|--------------|--------------|--------------|------|-------------|-------------|-----------------|-----------------|------------|
-| asyncfiles | 0.0138 | 0.0089 | 0.0381 | 362.18 | 0.0 | 0.0 | 197.5 | 204.3 | 20 |
-| aiofile | 0.0193 | 0.0120 | 0.0276 | 259.48 | 0.0 | 0.0 | 196.6 | 208.4 | 20 |
-| anyio | 0.0201 | 0.0117 | 0.0356 | 249.03 | 0.0 | 0.0 | 179.9 | 183.0 | 20 |
-| aiofiles | 0.0219 | 0.0121 | 0.0283 | 228.59 | 0.0 | 0.0 | 188.2 | 193.0 | 20 |
+| aiofile | 0.0135 | 0.0115 | 0.0254 | 371.04 | 0.0 | 0.0 | 177.9 | 181.7 | 100 |
+| aiofiles | 0.0136 | 0.0103 | 0.0433 | 367.90 | 0.0 | 0.0 | 144.5 | 181.6 | 100 |
+| asyncfiles | 0.0144 | 0.0063 | 0.0298 | 346.11 | 0.0 | 0.0 | 161.9 | 182.3 | 100 |
+| anyio | 0.0206 | 0.0099 | 0.0394 | 242.31 | 0.0 | 0.0 | 87.6 | 107.2 | 100 |
 
-## 🏆 Winner: **asyncfiles**
+## 🏆 Winner: **aiofile**
 
-- **Average Time**: 0.0138s
-- **Throughput**: 362.18 MB/s
+- **Average Time**: 0.0135s
+- **Throughput**: 371.04 MB/s
 - **Average CPU Usage**: 0.0%
-- **Average Memory Usage**: 197.5 MB
+- **Average Memory Usage**: 177.9 MB
 
 ## Performance Comparison
 
-- **aiofile**: 1.40x slower than asyncfiles
-- **anyio**: 1.45x slower than asyncfiles
-- **aiofiles**: 1.58x slower than asyncfiles
+- **aiofiles**: 1.01x slower than aiofile
+- **asyncfiles**: 1.07x slower than aiofile
+- **anyio**: 1.53x slower than aiofile
 

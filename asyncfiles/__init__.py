@@ -17,14 +17,8 @@ __all__ = ["open", "__version__"]
 
 def get_loop(
     loop: Optional[asyncio.AbstractEventLoop] = None,
-) -> Optional[asyncio.AbstractEventLoop]:
-    try:
-        return loop or asyncio.get_running_loop()
-    except RuntimeError:
-        if loop is None or not loop.is_running():
-            new = asyncio.new_event_loop()
-            asyncio.set_event_loop(new)
-            return new
+) -> asyncio.AbstractEventLoop:
+    return loop or asyncio.get_running_loop()
 
 
 @lru_cache(maxsize=128)
@@ -39,21 +33,15 @@ async def open(
     buffer_size: int = 64 * 1024,
     loop: Optional[asyncio.AbstractEventLoop] = None,
 ):
-    try:
-        loop = get_loop(loop)
-        if loop is None:
-            raise ValueError("No event loop provided")
+    loop = get_loop(loop)
 
-        # Convert Path to str if necessary
-        if isinstance(path, Path):
-            path = str(path)
-        file_mode = parse_mode(mode)
-        # Seleccionar la clase apropiada según el modo
-        FileClass = BinaryFile if file_mode.binary else TextFile
+    # Convert Path to str if necessary
+    if isinstance(path, Path):
+        path = str(path)
+    file_mode = parse_mode(mode)
+    FileClass = BinaryFile if file_mode.binary else TextFile
 
-        async with FileClass(
-            path=path, mode=file_mode, buffer_size=buffer_size, loop=loop
-        ) as f:
-            yield f
-    finally:
-        pass
+    async with FileClass(
+        path=path, mode=file_mode, buffer_size=buffer_size, loop=loop
+    ) as f:
+        yield f
