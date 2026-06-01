@@ -9,9 +9,7 @@ from posix.fcntl cimport (
 cimport cython
 from libc.string cimport strchr
 from libc.stdlib cimport malloc, free
-from . cimport uv
 from cpython.ref    cimport Py_INCREF, Py_DECREF
-cimport cython
 from asyncio import create_task, sleep, get_running_loop, Future
 
 cdef  object new_future(object loop):

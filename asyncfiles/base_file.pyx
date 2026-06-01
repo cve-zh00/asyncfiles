@@ -5,7 +5,7 @@
 
 from . cimport uv
 from .utils cimport FileMode
-from .event_loop cimport EventLoopPump
+from .event_loop cimport EventLoopPump, _get_or_create_pump, release_shared_pump
 from .io_operations cimport IOOperation
 from .buffer_manager cimport BufferManager
 from .file_io cimport FileReader, FileWriter
@@ -27,16 +27,14 @@ cdef class BaseFile:
 
         self.offset = -1 if mode.appending else 0
 
-        self.pump = EventLoopPump.create(self.uv_loop)
+        # Use shared singleton pump for this asyncio loop
+        self.pump = _get_or_create_pump(loop, self.uv_loop)
         self.io_op = IOOperation.create(loop, self.uv_loop, self.fd, self.path_cstr)
         self.buffer_mgr = BufferManager(buffer_size)
-
-        self.pump.start()
 
     async def __aenter__(self):
         cdef int err
 
-        self.io_op.fd = self.fd
         future = self.io_op.open_file(self.flags)
         self.fd = await future
         self.io_op.fd = self.fd
@@ -47,15 +45,18 @@ cdef class BaseFile:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.fd >= 0:
-            await self.io_op.close_file()
-
-        await self.pump.stop()
+        try:
+            if self.fd >= 0:
+                await self.io_op.close_file()
+        finally:
+            release_shared_pump(self.loop)
 
     async def truncate(self, int64_t length=0):
         await self.io_op.truncate_file(length)
         if self.file_mode.readable:
             self.size = length
+        if self.offset > length:
+            self.offset = length
         return 0
 
     cpdef seek(self, int64_t offset, int whence=0):
