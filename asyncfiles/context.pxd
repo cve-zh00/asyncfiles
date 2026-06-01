@@ -14,7 +14,8 @@ cdef struct FSCloseContext:
 cdef struct FSReadContext:
     PyObject*   future
     uv_buf_t*   bufs
-    char*       buffer_mem       # Single allocated memory block for all buffers
+    char*       buffer_mem       # Single allocated memory block (NULL if zero-copy)
+    PyObject*   py_buf           # Zero-copy: holds the bytes object libuv writes into
     Py_ssize_t chunk_size
     Py_ssize_t nbufs
     int flags

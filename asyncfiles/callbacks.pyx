@@ -121,6 +121,8 @@ cdef class _ReadResult:
         if ctx != NULL:
             if ctx.buffer_mem != NULL:
                 free(ctx.buffer_mem)
+            if ctx.py_buf != NULL:
+                Py_DECREF(<object>ctx.py_buf)
             if ctx.bufs != NULL:
                 free(ctx.bufs)
             if ctx.future != NULL:
@@ -143,6 +145,8 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
             # Free ctx on error path since no _ReadResult will own it
             if ctx.buffer_mem != NULL:
                 free(ctx.buffer_mem)
+            if ctx.py_buf != NULL:
+                Py_DECREF(<object>ctx.py_buf)
             if ctx.bufs != NULL:
                 free(ctx.bufs)
             Py_DECREF(future)
