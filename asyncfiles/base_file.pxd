@@ -20,6 +20,9 @@ cdef class BaseFile:
         EventLoopPump pump
         IOOperation io_op
         BufferManager buffer_mgr
+        str backend
+        object uring_pump
+        object io_op_uring
 
     cpdef seek(self, int64_t offset, int whence=*)
     cpdef tell(self)

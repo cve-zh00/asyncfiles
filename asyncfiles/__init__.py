@@ -2,14 +2,14 @@ import asyncio
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 from .files import BinaryFile, TextFile
 from .types import OpenTextMode
 from .utils import FileMode, mode_to_posix
 
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 __author__ = "Bastián García"
 __email__ = "bastiang@uc.cl"
 __all__ = ["open", "__version__"]
@@ -32,8 +32,13 @@ async def open(
     mode: OpenTextMode = "r",
     buffer_size: int = 64 * 1024,
     loop: Optional[asyncio.AbstractEventLoop] = None,
+    *,
+    backend: Literal["auto", "io_uring", "libuv"] = "auto",
 ):
+    from .backend import resolve_backend
+
     loop = get_loop(loop)
+    resolved = resolve_backend(backend)
 
     # Convert Path to str if necessary
     if isinstance(path, Path):
@@ -42,6 +47,7 @@ async def open(
     FileClass = BinaryFile if file_mode.binary else TextFile
 
     async with FileClass(
-        path=path, mode=file_mode, buffer_size=buffer_size, loop=loop
+        path=path, mode=file_mode, buffer_size=buffer_size,
+        loop=loop, backend=resolved,
     ) as f:
         yield f

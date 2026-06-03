@@ -22,6 +22,8 @@ MODULES_CFLAGS = [os.getenv("ASYNCFILES_OPT_CFLAGS", "-O3")]
 _ROOT = pathlib.Path(__file__).parent
 LIBUV_DIR = str(_ROOT / "vendor" / "libuv")
 LIBUV_BUILD_DIR = str(_ROOT / "build" / "libuv-{}".format(MACHINE))
+LIBURING_DIR = str(_ROOT / "vendor" / "liburing")
+LIBURING_BUILD_DIR = str(_ROOT / "build" / "liburing-{}".format(MACHINE))
 
 
 def _libuv_build_env():
@@ -207,6 +209,34 @@ class asyncfiles_build_ext(build_ext):
             ["make", j_flag, c_flag], cwd=LIBUV_BUILD_DIR, env=env, check=True
         )
 
+    def build_liburing(self):
+        """Build liburing from source (Linux only)."""
+        if os.path.exists(LIBURING_BUILD_DIR):
+            shutil.rmtree(LIBURING_BUILD_DIR)
+        shutil.copytree(LIBURING_DIR, LIBURING_BUILD_DIR)
+
+        env = os.environ.copy()
+        env["CFLAGS"] = env.get("CFLAGS", "") + " -O2 -fPIC"
+
+        subprocess.run(
+            ["./configure"],
+            cwd=LIBURING_BUILD_DIR,
+            env=env,
+            check=True,
+        )
+
+        try:
+            njobs = len(os.sched_getaffinity(0))
+        except AttributeError:
+            njobs = os.cpu_count()
+        j_flag = "-j{}".format(njobs or 1)
+        subprocess.run(
+            ["make", j_flag],
+            cwd=LIBURING_BUILD_DIR,
+            env=env,
+            check=True,
+        )
+
     def build_extensions(self):
         if self.use_system_libuv:
             self.compiler.add_library("uv")
@@ -237,7 +267,46 @@ class asyncfiles_build_ext(build_ext):
 
         self.compiler.add_library("pthread")
 
+        # Build and link liburing on Linux
+        if sys.platform.startswith("linux"):
+            liburing_lib = os.path.join(
+                LIBURING_BUILD_DIR, "src", "liburing-ffi.a"
+            )
+            if not os.path.exists(liburing_lib):
+                self.build_liburing()
+            if not os.path.exists(liburing_lib):
+                raise RuntimeError("failed to build liburing")
+
+            liburing_include = os.path.join(LIBURING_BUILD_DIR, "src", "include")
+            for ext in self.extensions:
+                if "io_uring" in ext.name or "backend" in ext.name:
+                    ext.extra_objects.append(liburing_lib)
+                    ext.include_dirs.append(liburing_include)
+
         super().build_extensions()
+
+
+# Conditional io_uring extensions (Linux only)
+IO_URING_EXTENSIONS = []
+if sys.platform.startswith("linux"):
+    IO_URING_CFLAGS = MODULES_CFLAGS + ["-D_GNU_SOURCE"]
+    IO_URING_EXTENSIONS = [
+        Extension(
+            "asyncfiles.io_uring_pump",
+            sources=["asyncfiles/io_uring_pump.pyx"],
+            extra_compile_args=IO_URING_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.io_uring_operations",
+            sources=["asyncfiles/io_uring_operations.pyx"],
+            extra_compile_args=IO_URING_CFLAGS,
+        ),
+        Extension(
+            "asyncfiles.io_uring_file_io",
+            sources=["asyncfiles/io_uring_file_io.pyx"],
+            extra_compile_args=IO_URING_CFLAGS,
+        ),
+    ]
 
 
 setup(
@@ -315,7 +384,12 @@ setup(
             sources=["asyncfiles/files.pyx"],
             extra_compile_args=MODULES_CFLAGS,
         ),
-    ],
+        Extension(
+            "asyncfiles.backend",
+            sources=["asyncfiles/backend.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+    ] + IO_URING_EXTENSIONS,
     include_package_data=True,
     zip_safe=False,
 )

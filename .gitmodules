@@ -1,3 +1,6 @@
 [submodule "vendor/libuv"]
 	path = vendor/libuv
 	url = https://github.com/libuv/libuv.git
+[submodule "vendor/liburing"]
+	path = vendor/liburing
+	url = https://github.com/axboe/liburing.git
