@@ -1,7 +1,7 @@
 # Requirements for asyncFiles benchmark comparison
 
 # Core async file libraries for comparison
-aiofile>=3.8.0
+aiofile>=3.9.0
 aiofiles>=23.1.0
 
 # Data analysis and visualization
