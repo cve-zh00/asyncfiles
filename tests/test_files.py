@@ -526,3 +526,64 @@ async def test_missing_file_raises(tmp_path):
     with pytest.raises(OSError):
         async with async_open(str(tmp_path / "nope.bin"), "rb"):
             pass
+
+
+async def test_text_write_returns_utf8_byte_count(temp_file):
+    data = "añ한🏁"
+
+    async with async_open(temp_file, "w") as afp:
+        written = await afp.write(data)
+
+    assert written == len(data.encode("utf-8"))
+    assert Path(temp_file).read_bytes() == data.encode("utf-8")
+
+
+async def test_text_write_large_non_ascii_temporary(temp_file):
+    # Above the io_uring parallel threshold; the str is a temporary that must
+    # stay alive while the write is in flight.
+    size = 3 * 1024 * 1024
+
+    async with async_open(temp_file, "w") as afp:
+        await afp.write("é한" * size)
+
+    async with async_open(temp_file, "r") as afp:
+        result = await afp.read()
+
+    assert result == "é한" * size
+
+
+async def test_text_write_at_offset_after_seek(temp_file):
+    async with async_open(temp_file, "w+") as afp:
+        await afp.write("hello world")
+        afp.seek(6)
+        await afp.write("한글!")
+
+    assert Path(temp_file).read_text(encoding="utf-8") == "hello 한글!"
+
+
+async def test_open_without_async_with_is_context_manager(temp_file):
+    cm = async_open(temp_file, "wb")
+    async with cm as afp:
+        await afp.write(b"abc")
+
+    assert Path(temp_file).read_bytes() == b"abc"
+
+
+async def test_open_does_not_leak_futures(temp_file):
+    import gc
+
+    def count():
+        gc.collect()
+        return sum(1 for o in gc.get_objects() if isinstance(o, asyncio.Future))
+
+    async with async_open(temp_file, "wb") as afp:
+        await afp.write(b"x" * 4096)
+
+    before = count()
+    for _ in range(200):
+        async with async_open(temp_file, "rb") as afp:
+            await afp.read()
+        async with async_open(temp_file, "ab") as afp:
+            await afp.write(b"y")
+
+    assert count() - before < 10

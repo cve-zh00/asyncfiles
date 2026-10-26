@@ -6,13 +6,10 @@ from posix.fcntl cimport (
 )
 
 cimport cython
-from cpython.ref    cimport Py_INCREF, Py_DECREF
-from asyncio import Future
 
-cdef  object new_future(object loop):
-    cdef object future = Future(loop=loop)
-    Py_INCREF(future)
-    return future
+cdef object new_future(object loop):
+    # Callers take their own reference (ctx) with Py_INCREF; do not add one here.
+    return loop.create_future()
 
 cdef class FileMode:
 
