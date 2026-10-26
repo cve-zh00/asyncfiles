@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.6.0 (2026-10-26)
+
+### Continuous Integration
+
+- **benchmark**: Single medium container, publish benchmark_read.md and benchmark_write.md
+  ([`a366217`](https://github.com/cve-zh00/asyncfiles/commit/a36621773268e782c2ee667aa1f043ee5abb72aa))
+
+### Features
+
+- Increase default iterations from 5 to 10
+  ([`ea5e6bb`](https://github.com/cve-zh00/asyncfiles/commit/ea5e6bbe8f425979437e1c207cc1aedd49e59039))
+
+
 ## v1.5.1 (2026-10-26)
 
 ### Bug Fixes
