@@ -2,7 +2,10 @@
 
 [![Python Versions](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/cve-zh00/asyncfiles/issues)
+[![Tests](https://github.com/cve-zh00/asyncfiles/actions/workflows/tests.yml/badge.svg)](https://github.com/cve-zh00/asyncfiles/actions/workflows/tests.yml)
+[![Release](https://github.com/cve-zh00/asyncfiles/actions/workflows/release.yml/badge.svg)](https://github.com/cve-zh00/asyncfiles/actions/workflows/release.yml)
+[![PyPI](https://img.shields.io/pypi/v/py-asyncfiles.svg)](https://pypi.org/project/py-asyncfiles/)
+[![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196.svg)](https://www.conventionalcommits.org/)
 
 **asyncfiles** is a high-performance async file I/O library for Python, built using Cython on two backends: native **io_uring** (Linux 5.6+) and [libuv](https://libuv.org/) (Linux, macOS, BSD). It provides non-blocking file operations with efficient event-loop integration and improved performance compared to typical Python thread-pool wrappers.
 
@@ -248,6 +251,14 @@ PYTHONASYNCIODEBUG=1 python -m pytest tests/ -v
 # Test installed package
 make testinstalled
 ```
+
+### Releases
+
+Releases are fully automated with [python-semantic-release](https://python-semantic-release.readthedocs.io/).
+Merging Conventional Commits into `main` (`feat:` → minor, `fix:`/`perf:`/`refactor:` → patch,
+`!` or `BREAKING CHANGE:` → major) runs the tests, bumps the version, updates `CHANGELOG.md`,
+tags `vX.Y.Z`, builds wheels/sdist, publishes to PyPI and refreshes the Docker benchmark results.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Code Style
 
