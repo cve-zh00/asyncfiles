@@ -20,8 +20,11 @@ cdef class BaseFile:
         EventLoopPump pump
         IOOperation io_op
         BufferManager buffer_mgr
+        str backend
+        object uring_pump
+        object io_op_uring
 
     cpdef seek(self, int64_t offset, int whence=*)
     cpdef tell(self)
-    cdef object _read_internal(self, int length=*)
+    cdef object _read_internal(self, Py_ssize_t length=*)
     cdef object _write_internal(self, bytes bdata)

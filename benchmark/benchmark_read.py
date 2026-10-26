@@ -166,7 +166,7 @@ async def main():
         bench.add_implementation("anyio", lambda f=filename: benchmark_anyio(f))
 
         # Ejecutar benchmark
-        results = await bench._run(iterations=20, max_concurrency=10)
+        results = await bench._run(iterations=100, max_concurrency=10)
         bench.print_summary(results)
 
         # Agregar resultados al markdown

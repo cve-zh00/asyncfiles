@@ -32,20 +32,30 @@ cdef inline bytes _process_read_result(_ReadResult wrapper) noexcept:
         char* dest
         Py_ssize_t chunk_len, i, offset
         bytes result_obj
+        object py_buf_obj
 
     try:
         # Clamp to requested size
         if requested_size > 0 and actual_size > requested_size:
             actual_size = requested_size
 
-        # Handle empty or null buffers
-        if actual_size <= 0 or ctx.bufs == NULL:
+        # Handle empty read
+        if actual_size <= 0:
             result_obj = b""
-        # Single buffer optimization
-        elif ctx.nbufs == 1:
+        # Zero-copy path: py_buf holds the bytes object libuv wrote into
+        elif ctx.py_buf != NULL:
+            py_buf_obj = <object>ctx.py_buf
+            if actual_size == requested_size:
+                # Full read — return the bytes object directly (zero copy!)
+                result_obj = <bytes>py_buf_obj
+            else:
+                # Partial read — need to slice (still one less copy than before)
+                result_obj = (<bytes>py_buf_obj)[:actual_size]
+        # Legacy path (buffer_mem): single buffer optimization
+        elif ctx.nbufs == 1 and ctx.bufs != NULL:
             result_obj = PyBytes_FromStringAndSize(ctx.bufs[0].base, actual_size)
-        # Multiple buffers - copy and merge
-        else:
+        # Legacy path: multiple buffers - copy and merge
+        elif ctx.bufs != NULL:
             py_bytes = PyBytes_FromStringAndSize(NULL, actual_size)
             dest = PyBytes_AS_STRING(py_bytes)
             offset = 0
@@ -58,17 +68,22 @@ cdef inline bytes _process_read_result(_ReadResult wrapper) noexcept:
                 memcpy(dest + offset, ctx.bufs[i].base, chunk_len)
                 offset += chunk_len
             result_obj = py_bytes
+        else:
+            result_obj = b""
 
         return result_obj
     finally:
-        # Cleanup context
+        # Cleanup context and mark as consumed so __dealloc__ won't double-free
         if ctx.buffer_mem != NULL:
             free(ctx.buffer_mem)
+        if ctx.py_buf != NULL:
+            Py_DECREF(<object>ctx.py_buf)
         if ctx.bufs != NULL:
             free(ctx.bufs)
         if ctx.future != NULL:
             Py_DECREF(<object>ctx.future)
         free(ctx)
+        wrapper.ctx = NULL
 
 
 cdef class FileReader:
@@ -80,7 +95,7 @@ cdef class FileReader:
         self.binary = binary
 
     @cython.cdivision(True)
-    async def read(self, int length=-1):
+    async def read(self, Py_ssize_t length=-1):
         """Read with post-callback processing"""
         cdef:
             object future_result
@@ -100,7 +115,7 @@ cdef class FileReader:
 
         return result
     @cython.cdivision(True)
-    cdef object _read_internal(self, int length=-1):
+    cdef object _read_internal(self, Py_ssize_t length=-1):
         cdef:
             object future = new_future(self.io_op.loop)
             int err
@@ -114,6 +129,7 @@ cdef class FileReader:
             char* chunk_ptr
             Py_ssize_t max_bufs = 64
             Py_ssize_t large_threshold = 10485760
+            bytes py_buf
 
         total = length if length >= 0 else max(0, self.size - self.offset)
 
@@ -126,7 +142,7 @@ cdef class FileReader:
             chunk_size = total
             nbufs = 1
         elif total > large_threshold:
-            chunk_size = 256 * 1024  # 2MB
+            chunk_size = 256 * 1024
             nbufs = (total + chunk_size - 1) // chunk_size
             if nbufs > max_bufs:
                 chunk_size = (total + max_bufs - 1) // max_bufs
@@ -149,6 +165,7 @@ cdef class FileReader:
         ctx.nbufs = nbufs
         ctx.bufs = NULL
         ctx.buffer_mem = NULL
+        ctx.py_buf = NULL
 
         # Allocate buffer array
         ctx.bufs = <uv.uv_buf_t*>malloc(nbufs * sizeof(uv.uv_buf_t))
@@ -157,31 +174,37 @@ cdef class FileReader:
             future.set_exception(MemoryError())
             return future
 
-        # Allocate single memory block for all buffers
-        ctx.buffer_mem = <char*>malloc(total)
-        if ctx.buffer_mem == NULL:
+        # Zero-copy: create a bytes object and have libuv write directly into it.
+        # PyBytes_FromStringAndSize(NULL, n) creates a bytes with uninitialized buffer.
+        # This is safe because the bytes won't be exposed to Python until after
+        # libuv finishes writing (it's held in ctx.py_buf until the callback).
+        py_buf = PyBytes_FromStringAndSize(NULL, total)
+        if py_buf is None:
             free(ctx.bufs)
             free(ctx)
             future.set_exception(MemoryError())
             return future
 
-        p_uvbufs = ctx.bufs
+        # Keep the bytes object alive during the async operation
+        Py_INCREF(py_buf)
+        ctx.py_buf = <PyObject*>py_buf
+        ctx.buffer_mem = NULL  # Not using malloc'd buffer
 
-        # Divide the memory block into chunks
+        p_uvbufs = ctx.bufs
+        chunk_ptr = PyBytes_AS_STRING(py_buf)
+
+        # Point uv buffers directly into the bytes object's internal buffer
         for i in range(nbufs):
             chunk_len = chunk_size if i < nbufs - 1 else total - chunk_size * (nbufs - 1)
-            chunk_ptr = ctx.buffer_mem + (i * chunk_size)
-            p_uvbufs[i] = uv.uv_buf_init(chunk_ptr, <unsigned int>chunk_len)
+            p_uvbufs[i] = uv.uv_buf_init(chunk_ptr + (i * chunk_size), <unsigned int>chunk_len)
 
         Py_INCREF(future)
 
         req = <uv.uv_fs_t*>malloc(sizeof(uv.uv_fs_t))
         if req == NULL:
-            # Cleanup buffers
-            if ctx.buffer_mem is not NULL:
-                free(ctx.buffer_mem)
             if ctx.bufs is not NULL:
                 free(ctx.bufs)
+            Py_DECREF(py_buf)
             free(ctx)
             Py_DECREF(future)
             future.set_exception(MemoryError())
@@ -200,11 +223,9 @@ cdef class FileReader:
         )
 
         if err < 0:
-            # Cleanup buffers
-            if ctx.buffer_mem is not NULL:
-                free(ctx.buffer_mem)
             if ctx.bufs is not NULL:
                 free(ctx.bufs)
+            Py_DECREF(py_buf)
             free(ctx)
             free(req)
             Py_DECREF(future)

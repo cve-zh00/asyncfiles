@@ -81,6 +81,8 @@ cdef extern from "uv.h" nogil:
     uv_loop_t* uv_default_loop()
     int        uv_run(uv_loop_t* loop, uv_run_mode mode)
     void       uv_stop(uv_loop_t* loop)
+    int        uv_backend_fd(const uv_loop_t* loop)
+    int        uv_backend_timeout(const uv_loop_t* loop)
     int uv_fs_fsync(uv_loop_t*, uv_fs_t* req,
                         int fd,uv_fs_cb cb)
     int uv_fs_open  (uv_loop_t*, uv_fs_t* req,

@@ -2,14 +2,14 @@ import asyncio
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 from .files import BinaryFile, TextFile
 from .types import OpenTextMode
 from .utils import FileMode, mode_to_posix
 
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 __author__ = "Bastián García"
 __email__ = "bastiang@uc.cl"
 __all__ = ["open", "__version__"]
@@ -17,14 +17,8 @@ __all__ = ["open", "__version__"]
 
 def get_loop(
     loop: Optional[asyncio.AbstractEventLoop] = None,
-) -> Optional[asyncio.AbstractEventLoop]:
-    try:
-        return loop or asyncio.get_running_loop()
-    except RuntimeError:
-        if loop is None or not loop.is_running():
-            new = asyncio.new_event_loop()
-            asyncio.set_event_loop(new)
-            return new
+) -> asyncio.AbstractEventLoop:
+    return loop or asyncio.get_running_loop()
 
 
 @lru_cache(maxsize=128)
@@ -38,22 +32,22 @@ async def open(
     mode: OpenTextMode = "r",
     buffer_size: int = 64 * 1024,
     loop: Optional[asyncio.AbstractEventLoop] = None,
+    *,
+    backend: Literal["auto", "io_uring", "libuv"] = "auto",
 ):
-    try:
-        loop = get_loop(loop)
-        if loop is None:
-            raise ValueError("No event loop provided")
+    from .backend import resolve_backend
 
-        # Convert Path to str if necessary
-        if isinstance(path, Path):
-            path = str(path)
-        file_mode = parse_mode(mode)
-        # Seleccionar la clase apropiada según el modo
-        FileClass = BinaryFile if file_mode.binary else TextFile
+    loop = get_loop(loop)
+    resolved = resolve_backend(backend)
 
-        async with FileClass(
-            path=path, mode=file_mode, buffer_size=buffer_size, loop=loop
-        ) as f:
-            yield f
-    finally:
-        pass
+    # Convert Path to str if necessary
+    if isinstance(path, Path):
+        path = str(path)
+    file_mode = parse_mode(mode)
+    FileClass = BinaryFile if file_mode.binary else TextFile
+
+    async with FileClass(
+        path=path, mode=file_mode, buffer_size=buffer_size,
+        loop=loop, backend=resolved,
+    ) as f:
+        yield f

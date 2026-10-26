@@ -5,7 +5,7 @@
 
 from . cimport uv
 from .utils cimport FileMode
-from .event_loop cimport EventLoopPump
+from .event_loop cimport EventLoopPump, _get_or_create_pump, release_shared_pump
 from .io_operations cimport IOOperation
 from .buffer_manager cimport BufferManager
 from .file_io cimport FileReader, FileWriter
@@ -14,48 +14,77 @@ from libc.stdint cimport int64_t
 
 
 cdef class BaseFile:
-    def __init__(self, str path, FileMode mode, size_t buffer_size, object loop):
+    def __init__(self, str path, FileMode mode, size_t buffer_size, object loop,
+                 str backend="libuv"):
         self.path = path
         self.path_cstr = PyUnicode_AsUTF8(path)
         self.flags = mode.flags
         self.buffer_size = buffer_size
         self.loop = loop
-        self.uv_loop = uv.uv_default_loop()
         self.file_mode = mode
         self.fd = -1
         self.size = -1
+        self.backend = backend
 
         self.offset = -1 if mode.appending else 0
 
-        self.pump = EventLoopPump.create(self.uv_loop)
-        self.io_op = IOOperation.create(loop, self.uv_loop, self.fd, self.path_cstr)
+        if backend == "io_uring":
+            # Conditional imports to avoid errors on non-Linux platforms
+            from .io_uring_pump import get_or_create_uring_pump
+            from .io_uring_operations import create_io_uring_operation
+
+            self.uring_pump = get_or_create_uring_pump(loop)
+            self.io_op_uring = create_io_uring_operation(loop, self.uring_pump, self.fd, self.path)
+            self.pump = None
+            self.io_op = None
+            self.uv_loop = NULL
+        else:
+            # Default libuv path — unchanged behavior
+            self.uv_loop = uv.uv_default_loop()
+            self.pump = _get_or_create_pump(loop, self.uv_loop)
+            self.io_op = IOOperation.create(loop, self.uv_loop, self.fd, self.path_cstr)
+            self.uring_pump = None
+            self.io_op_uring = None
+
         self.buffer_mgr = BufferManager(buffer_size)
 
-        self.pump.start()
-
     async def __aenter__(self):
-        cdef int err
-
-        self.io_op.fd = self.fd
-        future = self.io_op.open_file(self.flags)
-        self.fd = await future
-        self.io_op.fd = self.fd
-
-        if self.file_mode.readable:
-            self.size = await self.io_op.get_stat()
+        if self.backend == "io_uring":
+            self.fd = await self.io_op_uring.py_open_file(self.flags)
+            self.io_op_uring.fd = self.fd
+            if self.file_mode.readable:
+                self.size = await self.io_op_uring.py_get_stat()
+        else:
+            self.fd = await self.io_op.open_file(self.flags)
+            self.io_op.fd = self.fd
+            if self.file_mode.readable:
+                self.size = await self.io_op.get_stat()
 
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.fd >= 0:
-            await self.io_op.close_file()
-
-        await self.pump.stop()
+        try:
+            if self.fd >= 0:
+                if self.backend == "io_uring":
+                    await self.io_op_uring.py_close_file()
+                else:
+                    await self.io_op.close_file()
+        finally:
+            if self.backend == "io_uring":
+                from .io_uring_pump import release_uring_pump
+                release_uring_pump(self.loop)
+            else:
+                release_shared_pump(self.loop)
 
     async def truncate(self, int64_t length=0):
-        await self.io_op.truncate_file(length)
+        if self.backend == "io_uring":
+            await self.io_op_uring.py_truncate_file(length)
+        else:
+            await self.io_op.truncate_file(length)
         if self.file_mode.readable:
             self.size = length
+        if self.offset > length:
+            self.offset = length
         return 0
 
     cpdef seek(self, int64_t offset, int whence=0):
@@ -77,21 +106,44 @@ cdef class BaseFile:
     cpdef tell(self):
         return self.offset
 
-    cdef object _read_internal(self, int length=-1):
-        cdef FileReader reader = FileReader(
-            self.io_op,
-            self.buffer_mgr,
-            self.offset,
-            self.size,
-            self.file_mode.binary
-        )
-        result = reader.read(length)
-        return result
+    cdef object _read_internal(self, Py_ssize_t length=-1):
+        cdef FileReader uv_reader
+
+        if self.backend == "io_uring":
+            from .io_uring_file_io import IOUringFileReader
+            reader = IOUringFileReader(
+                self.io_op_uring,
+                self.buffer_mgr,
+                self.offset,
+                self.size,
+                self.file_mode.binary
+            )
+            return reader.read(length)
+        else:
+            uv_reader = FileReader(
+                self.io_op,
+                self.buffer_mgr,
+                self.offset,
+                self.size,
+                self.file_mode.binary
+            )
+            return uv_reader.read(length)
 
     cdef object _write_internal(self, bytes bdata):
-        cdef FileWriter writer = FileWriter(
-            self.io_op,
-            self.buffer_mgr,
-            self.offset
-        )
-        return writer.write(bdata)
+        cdef FileWriter uv_writer
+
+        if self.backend == "io_uring":
+            from .io_uring_file_io import IOUringFileWriter
+            writer = IOUringFileWriter(
+                self.io_op_uring,
+                self.buffer_mgr,
+                self.offset
+            )
+            return writer.write(bdata)
+        else:
+            uv_writer = FileWriter(
+                self.io_op,
+                self.buffer_mgr,
+                self.offset
+            )
+            return uv_writer.write(bdata)

@@ -17,7 +17,7 @@ cdef class BinaryFile(BaseFile):
             self.offset += result
         return result
 
-    async def read(self, int length=-1):
+    async def read(self, Py_ssize_t length=-1):
         cdef Py_ssize_t total_to_read = length if length >= 0 else self.size - self.offset
 
         if total_to_read <= 0:

@@ -1,4 +1,4 @@
-.PHONY: _default clean clean-libuv distclean compile debug docs test testinstalled release setup-build ci-clean
+.PHONY: _default clean clean-libuv clean-liburing distclean compile debug docs test testinstalled release setup-build ci-clean
 
 
 PYTHON ?= python
@@ -23,7 +23,11 @@ clean-libuv:
 	(cd vendor/libuv; git clean -dfX)
 
 
-distclean: clean clean-libuv
+clean-liburing:
+	(cd vendor/liburing; git clean -dfX)
+
+
+distclean: clean clean-libuv clean-liburing
 	rm -fr build/
 
 
