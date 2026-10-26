@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.7.0 (2026-10-26)
+
+### Features
+
+- Update benchmark sizes and parameters
+  ([`ddc431b`](https://github.com/cve-zh00/asyncfiles/commit/ddc431b5e2fd0389c7c9a954116990449d622327))
+
+
 ## v1.6.1 (2026-10-26)
 
 ### Bug Fixes
