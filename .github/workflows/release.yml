@@ -165,9 +165,9 @@ jobs:
           verbose: true
 
   benchmark:
-    # Runs the resource-limited Docker benchmark (tiny/small/medium) against the
-    # released code, attaches the results to the release and commits the
-    # refreshed benchmark/results/docker/* back to main.
+    # Runs the resource-limited Docker benchmark (single 2 CPU / 1GB container)
+    # against the released code, attaches benchmark_read.md / benchmark_write.md
+    # to the release and commits them back to main.
     name: Docker benchmark
     needs: [version]
     if: needs.version.outputs.released == 'true'
@@ -185,29 +185,30 @@ jobs:
           submodules: true
 
       - name: Run Docker benchmark
-        run: scripts/run_docker_benchmark.sh tiny small medium
+        run: scripts/run_docker_benchmark.sh
 
       - uses: actions/upload-artifact@v7
         with:
           name: bench-results
-          path: benchmark/results/docker/*
+          path: benchmark/results/benchmark_*.md
 
       - name: Attach results to the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$TAG" benchmark/results/docker/*.md benchmark/results/docker/*.json --clobber
+        run: gh release upload "$TAG" benchmark/results/benchmark_read.md benchmark/results/benchmark_write.md --clobber
 
       - name: Commit refreshed results to main
         run: |
-          cp -r benchmark/results/docker "$RUNNER_TEMP/bench-results"
+          mkdir -p "$RUNNER_TEMP/bench-results"
+          cp benchmark/results/benchmark_*.md "$RUNNER_TEMP/bench-results/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout -f -B main origin/main
-          rm -rf benchmark/results/docker
-          cp -r "$RUNNER_TEMP/bench-results" benchmark/results/docker
-          git add benchmark/results/docker
+          mkdir -p benchmark/results
+          cp "$RUNNER_TEMP/bench-results"/benchmark_*.md benchmark/results/
+          git add benchmark/results/benchmark_read.md benchmark/results/benchmark_write.md
           if git diff --cached --quiet; then
             echo "No benchmark changes to commit"
           else

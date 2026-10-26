@@ -17,13 +17,13 @@ The test suite runs against both backends (libuv and, on Linux, io_uring).
 
 ## Benchmarks
 
-Resource-limited Docker benchmark (needs Docker; io_uring needs `--security-opt seccomp=unconfined`, which the script sets):
+Resource-limited Docker benchmark (one container, 2 CPUs / 1GB; needs Docker; io_uring needs `--security-opt seccomp=unconfined`, which the script sets):
 
 ```bash
-scripts/run_docker_benchmark.sh tiny small medium
+scripts/run_docker_benchmark.sh
 ```
 
-Results land in `benchmark/results/docker/` and are refreshed automatically on every release.
+Results land in `benchmark/results/benchmark_read.md` and `benchmark_write.md` and are refreshed automatically on every release.
 
 ## Commit messages
 

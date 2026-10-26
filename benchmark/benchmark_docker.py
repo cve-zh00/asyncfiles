@@ -3,6 +3,7 @@
 
 Compares asyncfiles (libuv / io_uring) against aiofiles, aiofile and anyio under
 the same cgroup limits (CPU, memory, pids, optional block I/O throttling).
+Writes two human-readable reports: benchmark_read.md and benchmark_write.md.
 
 Usage (inside the container, see scripts/run_docker_benchmark.sh):
     python benchmark/benchmark_docker.py --dir /bench --output /results
@@ -10,10 +11,11 @@ Usage (inside the container, see scripts/run_docker_benchmark.sh):
 
 import argparse
 import asyncio
-import json
 import os
+import platform
 import statistics
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, List, Optional
 
@@ -352,45 +354,123 @@ async def main_async(args) -> Dict[str, object]:
     return {"limits": limits, "args": vars(args), "skipped": skipped, "failed": sorted(failed), "results": results}
 
 
-def to_markdown(report: Dict[str, object], label: str) -> str:
+def _scenarios(report: Dict[str, object], op: str):
+    """Group results per (size, concurrency), preserving the run order."""
+    groups: Dict[tuple, List[Dict[str, object]]] = {}
+    for r in report["results"]:
+        if r["op"] == op:
+            groups.setdefault((r["size"], r["concurrency"]), []).append(r)
+    return groups
+
+
+def _config_lines(report: Dict[str, object], op: str) -> List[str]:
     limits = report["limits"]
+    args = report["args"]
     mem = limits["memory_bytes"]
+    libs = sorted({r["impl"] for r in report["results"]})
     lines = [
-        f"# Container benchmark: {label}",
-        "",
-        f"- **CPUs**: {limits['cpus']}",
-        f"- **Memory**: {'unlimited' if not mem else f'{mem / MB:.0f} MB'}",
-        f"- **Iterations**: {report['args']['iterations']}",
-        f"- **Reads cold cache**: {not report['args']['warm']}",
+        f"- **Container**: {limits['cpus']} CPUs, "
+        f"{'unlimited' if not mem else f'{mem / MB:.0f} MB'} RAM",
+        f"- **Kernel**: {platform.release()} ({platform.machine()})",
+        f"- **Iterations**: {args['iterations']}",
+        f"- **Concurrency**: {', '.join(str(c) for c in args['concurrency'])}",
+        f"- **File sizes**: {', '.join(args['sizes'])}",
     ]
+    if op == "read":
+        lines.append(f"- **Page cache**: {'warm' if args['warm'] else 'cold (evicted)'}")
+    lines.append(f"- **Libraries Tested**: {', '.join(libs)}")
     if report["skipped"]:
-        lines.append(f"- **Skipped (memory)**: {', '.join(report['skipped'])}")
+        lines.append(f"- **Skipped (exceeds memory limit)**: {', '.join(report['skipped'])}")
     if report.get("failed"):
         lines.append(f"- **Timed out (hang)**: {', '.join(report['failed'])}")
-    for op in ("read", "write"):
-        lines += ["", f"## {op.capitalize()}", ""]
+    lines.append(f"- **Generated**: {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}")
+    return lines
+
+
+def _slower(winner: float, other: float) -> str:
+    ratio = winner / other if other else float("inf")
+    return "about the same as" if ratio < 1.005 else f"{ratio:.2f}x slower than"
+
+
+def to_markdown(report: Dict[str, object], op: str) -> str:
+    """Render one operation (read/write) in the readable per-scenario format."""
+    groups = _scenarios(report, op)
+    wins: Dict[str, int] = {}
+    for rows in groups.values():
+        best = max(rows, key=lambda r: r["throughput_mb_s"])
+        wins[best["impl"]] = wins.get(best["impl"], 0) + 1
+
+    lines = [
+        f"# {op.capitalize()} Benchmark Results",
+        "",
+        f"This document contains the benchmark results for {op} operations using "
+        "different async file I/O libraries, run inside a resource-limited "
+        "Docker container.",
+        "",
+        "## Test Configuration",
+        "",
+        *_config_lines(report, op),
+        "",
+        "## Summary",
+        "",
+        f"Scenarios won (highest throughput) out of {len(groups)}:",
+        "",
+        "| Implementation | Wins |",
+        "|----------------|------|",
+        *[
+            f"| {name} | {count} |"
+            for name, count in sorted(wins.items(), key=lambda kv: -kv[1])
+        ],
+    ]
+
+    for (size, conc), rows in groups.items():
+        rows = sorted(rows, key=lambda r: -r["throughput_mb_s"])
+        best = rows[0]
         lines += [
-            "| Size | Conc | Implementation | MB/s | ops/s | p50 ms | p95 ms "
-            "| p99 ms | CPU s | Throttled | Peak mem MB |",
-            "|---|---|---|---|---|---|---|---|---|---|---|",
+            "",
+            "",
+            "---",
+            "",
+            f"# Benchmark Results: {size}_x{conc}_{op}",
+            "",
+            "| Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) "
+            "| CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |",
+            "|----------------|------|-------|----------|----------|----------"
+            "|---------|---------------|------------------|------------|",
         ]
-        rows = [r for r in report["results"] if r["op"] == op]
         for r in rows:
             lines.append(
-                f"| {r['size']} | {r['concurrency']} | {r['impl']} "
-                f"| {r['throughput_mb_s']:.1f} | {r['ops_s']:.1f} "
+                f"| {r['impl']} | {r['throughput_mb_s']:.1f} | {r['ops_s']:.1f} "
                 f"| {r['lat_p50_ms']:.1f} | {r['lat_p95_ms']:.1f} "
                 f"| {r['lat_p99_ms']:.1f} | {r['cpu_s']:.2f} "
-                f"| {r['cpu_throttled_periods']} | {r['peak_cgroup_mb']:.0f} |"
+                f"| {r['cpu_throttled_periods']} | {r['peak_cgroup_mb']:.0f} "
+                f"| {report['args']['iterations']} |"
             )
+        lines += [
+            "",
+            f"## 🏆 Winner: **{best['impl']}**",
+            "",
+            f"- **Throughput**: {best['throughput_mb_s']:.1f} MB/s "
+            f"({best['ops_s']:.1f} ops/s)",
+            f"- **p95 Latency**: {best['lat_p95_ms']:.1f} ms",
+            f"- **CPU Time**: {best['cpu_s']:.2f} s",
+            f"- **Peak Memory**: {best['peak_cgroup_mb']:.0f} MB",
+        ]
+        if len(rows) > 1:
+            lines += ["", "## Performance Comparison", ""]
+            lines += [
+                f"- **{r['impl']}**: "
+                f"{_slower(best['throughput_mb_s'], r['throughput_mb_s'])} "
+                f"{best['impl']}"
+                for r in rows[1:]
+            ]
     return "\n".join(lines) + "\n"
 
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dir", default="/bench", help="scratch dir (disk-backed volume)")
-    p.add_argument("--output", default="/results", help="directory for json/md output")
-    p.add_argument("--label", default=os.environ.get("BENCH_LABEL", "default"))
+    p.add_argument("--output", default="/results", help="directory for the .md reports")
     p.add_argument("--sizes", nargs="+", default=list(SIZES), choices=list(SIZES))
     p.add_argument("--concurrency", nargs="+", type=int, default=[1, 8, 32])
     p.add_argument("--iterations", type=int, default=5)
@@ -405,9 +485,9 @@ def main() -> None:
     report = asyncio.run(main_async(args))
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
-    (out / f"container_{args.label}.json").write_text(json.dumps(report, indent=2))
-    (out / f"container_{args.label}.md").write_text(to_markdown(report, args.label))
-    print(f"\nResults written to {out}/container_{args.label}.(json|md)")
+    for op in ("read", "write"):
+        (out / f"benchmark_{op}.md").write_text(to_markdown(report, op))
+    print(f"\nResults written to {out}/benchmark_(read|write).md")
 
 
 if __name__ == "__main__":

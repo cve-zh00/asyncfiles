@@ -178,61 +178,39 @@ Additional modifiers:
 
 ## ⚡ Performance
 
-Throughput (MB/s) in a Docker container with 2 CPUs / 1GB RAM, binary mode, cold
-page cache. Best result per row in **bold**; `af-*` is asyncfiles with that backend.
+Benchmarks run in a single Docker container limited to 2 CPUs / 1GB RAM (binary
+mode, cold page cache for reads) against `aiofiles`, `aiofile` and `anyio`. Every
+scenario (file size × concurrency) is reported with throughput, latency
+percentiles, CPU time and peak memory, plus a winner and a "Nx slower" comparison:
 
-| Op | Size | Conc | aiofile | aiofiles | anyio | af-io_uring | af-libuv |
-|---|---|---|---|---|---|---|---|
-| read | 4KB | 1 | 12 | 12 | 27 | **29** | 19 |
-| write | 4KB | 1 | 6 | 13 | **27** | 24 | 22 |
-| read | 4KB | 8 | 38 | 23 | 15 | **152** | 65 |
-| write | 4KB | 8 | 18 | 24 | 53 | **133** | 116 |
-| read | 4KB | 32 | 32 | 36 | 27 | **251** | 140 |
-| write | 4KB | 32 | 39 | 37 | 54 | **209** | 167 |
-| read | 1MB | 1 | 1486 | 1672 | 3099 | **3416** | 1761 |
-| write | 1MB | 1 | 907 | 2082 | **3602** | 2833 | 2796 |
-| read | 1MB | 8 | 2762 | 5172 | 4360 | 3926 | **5402** |
-| write | 1MB | 8 | 1858 | 5208 | 4018 | **7227** | 5060 |
-| read | 1MB | 32 | 4163 | **5386** | 2853 | 2999 | 5069 |
-| write | 1MB | 32 | 2566 | 4891 | 3455 | 6499 | **6758** |
-| read | 16MB | 1 | 4514 | 4754 | **6169** | 4980 | 4835 |
-| write | 16MB | 1 | 2264 | 3680 | 3750 | **3837** | 3629 |
-| read | 16MB | 8 | 5453 | **9461** | 7445 | 3679 | 6633 |
-| write | 16MB | 8 | 3574 | 6010 | 5931 | **7609** | 7528 |
+- [Read benchmark results](benchmark/results/benchmark_read.md)
+- [Write benchmark results](benchmark/results/benchmark_write.md)
 
-asyncfiles is fastest in 11 of 16 cells in this profile (10 of 14 and 10 of 16 in
-the 0.5 CPU / 256MB and 1 CPU / 512MB profiles). It is strongest on many small files
-with concurrency (up to ~7x on 4KB reads) and on writes; `aiofiles` and `anyio`
-still lead on some concurrent large reads. Numbers come from a single container run
-and are partly served by the page cache, so treat them as relative, not absolute.
-Full results for every profile (latency percentiles, CPU time, throttling, peak
-memory) are in [`benchmark/results/docker/`](benchmark/results/docker/) and are
-refreshed automatically on every release.
+Scenarios won (highest throughput, 8 per operation, latest run):
 
-Older, non-containerised reports:
+| Implementation | Read | Write |
+|---|---|---|
+| asyncfiles (io_uring) | 3 | 4 |
+| asyncfiles (libuv) | 1 | 2 |
+| aiofiles | 3 | 0 |
+| anyio | 1 | 2 |
+| aiofile | 0 | 0 |
 
-- [Read Benchmark Results](benchmark/results/READ_BENCHMARK.md)
-- [Write Benchmark Results](benchmark/results/WRITE_BENCHMARK.md)
+asyncfiles is strongest on many small files with concurrency and on writes;
+`aiofiles` and `anyio` still lead some large concurrent reads. Numbers come from a
+single container run and are partly served by the page cache, so treat them as
+relative, not absolute. The reports are refreshed automatically on every release.
 
-### Run the benchmarks yourself
+### Run the benchmark yourself
 
 ```bash
-python -m benchmark.benchmark_read
-python -m benchmark.benchmark_write
-```
-
-Resource-limited Docker benchmark (reads and writes, binary, 4KB/1MB/16MB,
-concurrency 1/8/32, cold page cache) against `aiofiles`, `aiofile` and `anyio`.
-Profiles: `tiny` = 0.5 CPU/256MB, `small` = 1 CPU/512MB, `medium` = 2 CPU/1GB.
-
-```bash
-scripts/run_docker_benchmark.sh tiny small medium
+scripts/run_docker_benchmark.sh
 # optional disk throttling: IO_DEVICE=/dev/vda IO_READ_BPS=50mb IO_WRITE_BPS=30mb
 ```
 
-Cells whose working set exceeds 50% of the memory limit are skipped, and each
-cell has a timeout (`--timeout`, default 120s) so a hung implementation cannot
-stall the whole run.
+Sizes are 4KB/1MB/16MB with concurrency 1/8/32. Scenarios whose working set
+exceeds 50% of the memory limit are skipped, and each cell has a timeout
+(`--timeout`, default 120s) so a hung implementation cannot stall the whole run.
 
 ## 🛠️ Development
 

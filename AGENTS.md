@@ -81,17 +81,9 @@ pytest --cov=asyncfiles --cov-report=term-missing tests/
 ### Benchmarks
 
 ```bash
-# Run read benchmarks
-python -m benchmark.benchmark_read
-
-# Run write benchmarks
-python -m benchmark.benchmark_write
-
-# Run readlines benchmarks
-python -m benchmark.benchmark_readlines
-
-# Initial benchmarks
-python -m benchmark.benchmark_initial
+# Single resource-limited Docker container (2 CPUs / 1GB RAM).
+# Writes benchmark/results/benchmark_read.md and benchmark_write.md
+scripts/run_docker_benchmark.sh
 ```
 
 ### Code Quality (from pyproject.toml)
@@ -174,12 +166,10 @@ asyncfiles/
 │   └── test_files.py    # Main test file
 │
 ├── benchmark/           # Performance benchmarks
-│   ├── __init__.py
-│   ├── benchmark.py     # Base benchmark class
-│   ├── benchmark_read.py
-│   ├── benchmark_write.py
-│   ├── benchmark_readlines.py
-│   └── benchmark_initial.py
+│   ├── benchmark_docker.py   # Harness run inside the container
+│   └── results/
+│       ├── benchmark_read.md
+│       └── benchmark_write.md
 │
 ├── vendor/              # Third-party dependencies
 │   └── libuv/           # Git submodule
@@ -593,20 +583,13 @@ Cython line tracing helps gdb show Python line numbers.
 
 ### Benchmarking
 
-Always benchmark changes against `aiofiles` and `aiofile`:
+Always benchmark changes against `aiofiles`, `aiofile` and `anyio`:
 ```bash
-python -m benchmark.benchmark_read
-python -m benchmark.benchmark_write
+scripts/run_docker_benchmark.sh
 ```
 
-Current performance (from README):
-```
-Benchmark Results (10MB file):
-├── asyncfiles:    45.2 ms  ← Fastest
-├── aiofile:       78.4 ms
-├── aiofiles:      112.6 ms
-└── stdlib+thread: 156.3 ms
-```
+Results (`benchmark/results/benchmark_read.md`, `benchmark_write.md`) are
+regenerated automatically on every release; see the README for a summary.
 
 ---
 
@@ -621,7 +604,7 @@ File: `.github/workflows/release.yml` (triggers: push to `main`, `workflow_dispa
 2. `version` — `python-semantic-release` bumps `pyproject.toml` / `asyncfiles/__init__.py`, updates `CHANGELOG.md`, commits `chore(release): X.Y.Z [skip ci]`, creates the `vX.Y.Z` tag and the GitHub release (only if the commits warrant a release)
 3. `build-sdist`, `build-wheels` — built from the new tag (cibuildwheel, Python 3.9–3.13)
 4. `publish` — attaches dists to the GitHub release and publishes to PyPI via trusted publishing (environment `pypi`)
-5. `benchmark` — runs `scripts/run_docker_benchmark.sh tiny small medium` on the tag, attaches results to the release and commits `benchmark/results/docker/*` to `main`
+5. `benchmark` — runs `scripts/run_docker_benchmark.sh` on the tag, attaches `benchmark_read.md`/`benchmark_write.md` to the release and commits them to `main`
 
 Everything runs in one workflow because tags pushed with `GITHUB_TOKEN` do not trigger other workflows.
 
