@@ -320,7 +320,7 @@ setup(
     url="https://github.com/cve-zh00/asyncfiles",
     license="MIT",
     platforms=["POSIX"],
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     packages=["asyncfiles"],
     cmdclass={"sdist": asyncfiles_sdist, "build_ext": asyncfiles_build_ext},
     ext_modules=[

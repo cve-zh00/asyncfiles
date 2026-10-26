@@ -1,6 +1,6 @@
 # asyncfiles
 
-[![Python Versions](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python Versions](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/cve-zh00/asyncfiles/issues)
 
@@ -26,7 +26,7 @@ pip3 install py-asyncfiles
 
 ### Requirements
 
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Cython ~3.0
 - A C compiler (gcc, clang, or MSVC)
 - libuv and liburing (included as submodules)

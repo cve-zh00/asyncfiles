@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "Cython~=3.0"]
+requires = ["setuptools>=77", "wheel", "Cython~=3.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,8 +7,9 @@ name = "py-asyncfiles"
 version = "1.4.0"
 description = "High-performance async file I/O library built on libuv"
 readme = "README.md"
-requires-python = ">=3.8"
-license = {text = "MIT"}
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Bastián García", email = "bastiang@uc.cl"}
 ]
@@ -31,7 +32,6 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: Unix",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -92,7 +92,7 @@ markers = [
 
 [tool.black]
 line-length = 88
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+target-version = ["py39", "py310", "py311", "py312"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -120,7 +120,7 @@ ensure_newline_before_comments = true
 skip_glob = ["vendor/*", "build/*"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
