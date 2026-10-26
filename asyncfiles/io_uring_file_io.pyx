@@ -7,6 +7,7 @@ from .io_uring_operations cimport IOUringOperation
 from .buffer_manager cimport BufferManager
 from cpython.bytes cimport PyBytes_FromStringAndSize, PyBytes_AS_STRING, PyBytes_GET_SIZE
 from cpython.ref cimport Py_INCREF, Py_DECREF
+from cpython.unicode cimport PyUnicode_Check, PyUnicode_AsUTF8AndSize
 from libc.stdint cimport int64_t
 
 
@@ -103,11 +104,11 @@ cdef class IOUringFileWriter:
         self.buffer_mgr = buffer_mgr
         self.offset = offset
 
-    async def _write_chunk(self, bytes bdata, Py_ssize_t start, Py_ssize_t n,
-                           int64_t file_off):
-        """Write n bytes from bdata[start:], retrying short writes."""
+    async def _write_chunk(self, object bdata, Py_ssize_t base_addr, Py_ssize_t start,
+                           Py_ssize_t n, int64_t file_off):
+        """Write n bytes from the buffer of bdata[start:], retrying short writes."""
         cdef:
-            const char* base = PyBytes_AS_STRING(bdata)
+            const char* base = <const char*><size_t>base_addr
             Py_ssize_t done = 0
             int put
 
@@ -121,26 +122,35 @@ cdef class IOUringFileWriter:
             done += put
         return done
 
-    async def write(self, bytes bdata):
-        """Zero-copy write straight from the bytes buffer (pinned by the pump)."""
+    async def write(self, object bdata):
+        """Zero-copy write from a bytes/str buffer (pinned by the pump)."""
         cdef:
-            Py_ssize_t total_bytes = PyBytes_GET_SIZE(bdata)
+            Py_ssize_t total_bytes
+            const char* base
+            Py_ssize_t base_addr
             Py_ssize_t pos
             Py_ssize_t n
             list tasks
+
+        if PyUnicode_Check(bdata):
+            base = PyUnicode_AsUTF8AndSize(bdata, &total_bytes)
+        else:
+            total_bytes = PyBytes_GET_SIZE(bdata)
+            base = PyBytes_AS_STRING(bdata)
+        base_addr = <Py_ssize_t><size_t>base
 
         if total_bytes == 0:
             return 0
 
         # offset < 0 means O_APPEND: must stay a single, ordered write
         if self.offset < 0 or total_bytes < PARALLEL_THRESHOLD:
-            return await self._write_chunk(bdata, 0, total_bytes, self.offset)
+            return await self._write_chunk(bdata, base_addr, 0, total_bytes, self.offset)
 
         tasks = []
         pos = 0
         while pos < total_bytes:
             n = min(CHUNK_SIZE, total_bytes - pos)
-            tasks.append(self._write_chunk(bdata, pos, n, self.offset + pos))
+            tasks.append(self._write_chunk(bdata, base_addr, pos, n, self.offset + pos))
             pos += n
         await asyncio.gather(*tasks)
         return total_bytes

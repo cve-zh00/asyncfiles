@@ -117,7 +117,7 @@ cdef class IOOperation:
             future.set_exception(MemoryError("Cannot allocate memory for stat"))
             return future
 
-        err = uv.uv_fs_stat(self.uv_loop, req, self.path_cstr, cb_stat)
+        err = uv.uv_fs_fstat(self.uv_loop, req, self.fd, cb_stat)
 
         if err < 0:
             _cleanup_context(<void*>ctx, req, future)

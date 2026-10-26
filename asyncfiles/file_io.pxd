@@ -21,4 +21,4 @@ cdef class FileWriter:
         BufferManager buffer_mgr
         int64_t offset
 
-    cdef object write(self, bytes bdata)
+    cdef object write(self, object bdata)

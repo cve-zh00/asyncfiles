@@ -5,7 +5,6 @@
 
 from .base_file cimport BaseFile
 from .iterators cimport BaseFileIterator
-from cpython.unicode cimport PyUnicode_AsUTF8String
 
 
 cdef class TextFile(BaseFile):
@@ -46,15 +45,7 @@ cdef class TextFile(BaseFile):
             return data.decode("utf-8")
 
     async def write(self, str data):
-        cdef:
-            bytes bdata
-            Py_ssize_t result
-
-        bdata = PyUnicode_AsUTF8String(data)
-        if bdata is None:
-            raise MemoryError("Error encoding data")
-
-        result = await self._write_internal(bdata)
+        cdef Py_ssize_t result = await self._write_internal(data)
         if result > 0 and self.offset >= 0:
             self.offset += result
         return result

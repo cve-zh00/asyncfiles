@@ -148,7 +148,7 @@ cdef class BaseFile:
             )
             return uv_reader.read(length)
 
-    cdef object _write_internal(self, bytes bdata):
+    cdef object _write_internal(self, object bdata):
         cdef FileWriter uv_writer
 
         if self.backend == "io_uring":

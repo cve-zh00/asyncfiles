@@ -15,6 +15,7 @@ from libc.stdlib cimport malloc, free
 from libc.stdint cimport int64_t
 from libc.string cimport memcpy
 from cpython.bytes cimport PyBytes_GET_SIZE, PyBytes_AsString, PyBytes_FromStringAndSize, PyBytes_AS_STRING
+from cpython.unicode cimport PyUnicode_Check, PyUnicode_AsUTF8AndSize
 from cpython.ref cimport Py_INCREF, Py_DECREF
 cimport cython
 
@@ -241,7 +242,8 @@ cdef class FileWriter:
         self.buffer_mgr = buffer_mgr
         self.offset = offset
 
-    cdef object write(self, bytes bdata):
+    cdef object write(self, object bdata):
+        """Write bytes or str; a str is sent from its own UTF-8 buffer (no copy)."""
         cdef:
             object future = new_future(self.io_op.loop)
             char* base_ptr
@@ -250,12 +252,19 @@ cdef class FileWriter:
             int nbufs, err
             uv.uv_fs_t* req
 
-        total_bytes = PyBytes_GET_SIZE(bdata)
+        try:
+            if PyUnicode_Check(bdata):
+                base_ptr = <char*>PyUnicode_AsUTF8AndSize(bdata, &total_bytes)
+            else:
+                total_bytes = PyBytes_GET_SIZE(bdata)
+                base_ptr = PyBytes_AsString(bdata)
+        except Exception as exc:
+            future.set_exception(exc)
+            return future
+
         if total_bytes == 0:
             future.set_result(0)
             return future
-
-        base_ptr = PyBytes_AsString(bdata)
 
         ctx = <FSWriteContext*>malloc(sizeof(FSWriteContext))
         if ctx == NULL:

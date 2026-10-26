@@ -1,9 +1,9 @@
 import asyncio
-from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Optional, Union
 
+from . import backend as _backend
 from .files import BinaryFile, TextFile
 from .types import OpenTextMode
 from .utils import FileMode, mode_to_posix
@@ -26,8 +26,7 @@ def parse_mode(mode: str) -> FileMode:
     return mode_to_posix(mode.encode())
 
 
-@asynccontextmanager
-async def open(
+def open(
     path: Union[str, Path],
     mode: OpenTextMode = "r",
     buffer_size: int = 64 * 1024,
@@ -35,10 +34,8 @@ async def open(
     *,
     backend: Literal["auto", "io_uring", "libuv"] = "auto",
 ):
-    from .backend import resolve_backend
-
     loop = get_loop(loop)
-    resolved = resolve_backend(backend)
+    resolved = _backend.resolve_backend(backend)
 
     # Convert Path to str if necessary
     if isinstance(path, Path):
@@ -46,8 +43,8 @@ async def open(
     file_mode = parse_mode(mode)
     FileClass = BinaryFile if file_mode.binary else TextFile
 
-    async with FileClass(
+    # The file object is itself the async context manager (__aenter__/__aexit__)
+    return FileClass(
         path=path, mode=file_mode, buffer_size=buffer_size,
         loop=loop, backend=resolved,
-    ) as f:
-        yield f
+    )
