@@ -160,6 +160,20 @@ python -m benchmark.benchmark_read
 python -m benchmark.benchmark_write
 ```
 
+### Resource-limited Docker benchmark
+
+Reads and writes (binary, 4KB/1MB/16MB, concurrency 1/8/32, cold page cache)
+against `aiofiles`, `aiofile` and `anyio`, inside containers with CPU/memory
+limits (`tiny`=0.5 CPU/256MB, `small`=1/512MB, `medium`=2/1GB):
+
+```bash
+scripts/run_docker_benchmark.sh tiny small medium
+# optional disk throttling: IO_DEVICE=/dev/vda IO_READ_BPS=50mb IO_WRITE_BPS=30mb
+```
+
+Results (JSON + Markdown) are written to `benchmark/results/docker/`.
+`io_uring` needs `--security-opt seccomp=unconfined` (the script sets it).
+
 
 ## 🛠️ Development
 

@@ -1,0 +1,23 @@
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/src
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential autoconf automake libtool pkg-config git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+RUN pip install "Cython~=3.0" setuptools wheel aiofiles aiofile anyio
+
+COPY . /src
+
+RUN python setup.py build_ext --inplace --cython-always \
+    && python -c "import asyncfiles; print('asyncfiles build OK')"
+
+VOLUME ["/bench", "/results"]
+
+ENTRYPOINT ["python", "benchmark/benchmark_docker.py"]
+CMD ["--dir", "/bench", "--output", "/results"]

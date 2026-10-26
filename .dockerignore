@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+venv
+build
+dist
+*.egg-info
+**/__pycache__
+**/*.so
+**/*.html
+.pytest_cache
+.mypy_cache
+.tox
+benchmark/results
+vendor/libuv/.git
+vendor/liburing/.git
