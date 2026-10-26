@@ -473,7 +473,7 @@ def parse_args():
     p.add_argument("--output", default="/results", help="directory for the .md reports")
     p.add_argument("--sizes", nargs="+", default=list(SIZES), choices=list(SIZES))
     p.add_argument("--concurrency", nargs="+", type=int, default=[1, 8, 32])
-    p.add_argument("--iterations", type=int, default=5)
+    p.add_argument("--iterations", type=int, default=10)
     p.add_argument("--libs", nargs="+", default=None)
     p.add_argument("--timeout", type=float, default=120, help="per-cell timeout (s)")
     p.add_argument("--warm", action="store_true", help="do not evict page cache")
