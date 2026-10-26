@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v1.5.1 (2026-10-26)
+
+### Bug Fixes
+
+- Clarify threading model and correct misleading async claims
+  ([`5fdaaf7`](https://github.com/cve-zh00/asyncfiles/commit/5fdaaf79034fa19afc1449bbee576b6260265494))
+
+- **build**: Build only liburing src and skip musllinux wheels
+  ([`3bb91be`](https://github.com/cve-zh00/asyncfiles/commit/3bb91be8551562fdef0ea2178bf8deb19e7492dc))
+
+### Continuous Integration
+
+- Fix cibuildwheel Linux dependency install
+  ([`a3dbb53`](https://github.com/cve-zh00/asyncfiles/commit/a3dbb53d61736ea234a7aede05693db8294ed685))
+
+
 ## v1.5.0 (2026-10-26)
 
 ### Bug Fixes
