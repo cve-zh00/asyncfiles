@@ -21,7 +21,7 @@ from typing import Awaitable, Callable, Dict, List, Optional
 
 KB = 1024
 MB = 1024 * KB
-SIZES = {"512KB": 512 * KB, "4MB": 4 * MB, "16MB": 16 * MB}
+SIZES = {"256KB": 256 * KB, "512KB": 512 * KB, "1MB": MB}
 CHUNK = 64 * KB
 
 
@@ -472,8 +472,8 @@ def parse_args():
     p.add_argument("--dir", default="/bench", help="scratch dir (disk-backed volume)")
     p.add_argument("--output", default="/results", help="directory for the .md reports")
     p.add_argument("--sizes", nargs="+", default=list(SIZES), choices=list(SIZES))
-    p.add_argument("--concurrency", nargs="+", type=int, default=[1, 8, 16, 32, 64])
-    p.add_argument("--iterations", type=int, default=100)
+    p.add_argument("--concurrency", nargs="+", type=int, default=[1, 8, 16, 32])
+    p.add_argument("--iterations", type=int, default=50)
     p.add_argument("--libs", nargs="+", default=None)
     p.add_argument("--timeout", type=float, default=120, help="per-cell timeout (s)")
     p.add_argument("--warm", action="store_true", help="do not evict page cache")
