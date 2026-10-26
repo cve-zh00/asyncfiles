@@ -230,9 +230,11 @@ class asyncfiles_build_ext(build_ext):
         except AttributeError:
             njobs = os.cpu_count()
         j_flag = "-j{}".format(njobs or 1)
+        # Only the library is needed; building examples/tests would require
+        # newer kernel headers than manylinux images ship (e.g. linux/udmabuf.h).
         subprocess.run(
             ["make", j_flag],
-            cwd=LIBURING_BUILD_DIR,
+            cwd=os.path.join(LIBURING_BUILD_DIR, "src"),
             env=env,
             check=True,
         )
