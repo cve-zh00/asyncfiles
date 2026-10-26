@@ -4,13 +4,14 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/cve-zh00/asyncfiles/issues)
 
-**asyncfiles** is a high-performance async file I/O library for Python, built on top of [libuv](https://libuv.org/) using Cython. It provides non-blocking file operations through libuv’s asynchronous filesystem APIs, allowing efficient event-loop integration and improved performance compared to typical Python thread-pool wrappers.
+**asyncfiles** is a high-performance async file I/O library for Python, built using Cython on two backends: native **io_uring** (Linux 5.6+) and [libuv](https://libuv.org/) (Linux, macOS, BSD). It provides non-blocking file operations with efficient event-loop integration and improved performance compared to typical Python thread-pool wrappers.
 
 ## 🚀 Features
 
-- **True Async I/O**: Built directly on libuv's async filesystem operations
-- **High Performance**: Cython-optimized with zero-copy buffer operations
-- **Non-blocking**: Uses libuv async filesystem APIs (backed by libuv thread pool)
+- **Two backends**: native `io_uring` on Linux (auto-selected when available) and `libuv` everywhere else
+- **True Async I/O**: Built directly on io_uring / libuv async filesystem operations
+- **High Performance**: Cython-optimized with zero-copy buffer operations, batched submissions and parallel chunked I/O for large files
+- **Cancellation-safe**: cancelling an in-flight read/write never frees a buffer the kernel is still using
 - **Simple API**: Familiar async context manager interface
 - **Type Hints**: Full typing support for better IDE integration
 - **Memory Efficient**: Configurable buffer sizes for optimal memory usage
@@ -28,7 +29,8 @@ pip3 install py-asyncfiles
 - Python 3.8 or higher
 - Cython ~3.0
 - A C compiler (gcc, clang, or MSVC)
-- libuv (included as submodule)
+- libuv and liburing (included as submodules)
+- POSIX only (Linux, macOS, BSD). Windows is not supported
 
 
 ## 🔥 Quick Start
@@ -97,6 +99,28 @@ async def large_file():
 asyncio.run(large_file())
 ```
 
+### Choosing a Backend
+
+```python
+import asyncio
+from asyncfiles import open
+
+async def main():
+    # "auto" (default): io_uring on Linux when the kernel allows it, else libuv
+    async with open('data.bin', 'rb', backend='io_uring') as f:
+        data = await f.read()
+
+    async with open('data.bin', 'rb', backend='libuv') as f:
+        data = await f.read()
+
+asyncio.run(main())
+```
+
+`io_uring` requires Linux 5.6+. Inside Docker it also needs
+`--security-opt seccomp=unconfined`, since the default seccomp profile blocks it.
+Operations not supported by the running kernel (e.g. `ftruncate` on kernels < 6.9)
+transparently fall back to a thread.
+
 ### Multiple Concurrent Operations
 
 ```python
@@ -138,42 +162,61 @@ Additional modifiers:
 
 ## ⚡ Performance
 
-asyncfiles significantly outperforms thread-based async file libraries:
+Throughput (MB/s) in a Docker container with 2 CPUs / 1GB RAM, binary mode, cold
+page cache. Best result per row in **bold**; `af-*` is asyncfiles with that backend.
 
-```
-Benchmark Results (10MB file):
-├── asyncfiles:    45.2 ms  ← 🏆 Fastest
-├── aiofile:       78.4 ms
-├── aiofiles:      112.6 ms
-└── stdlib+thread: 156.3 ms
-```
+| Op | Size | Conc | aiofile | aiofiles | anyio | af-io_uring | af-libuv |
+|---|---|---|---|---|---|---|---|
+| read | 4KB | 1 | 12 | 12 | 27 | **29** | 19 |
+| write | 4KB | 1 | 6 | 13 | **27** | 24 | 22 |
+| read | 4KB | 8 | 38 | 23 | 15 | **152** | 65 |
+| write | 4KB | 8 | 18 | 24 | 53 | **133** | 116 |
+| read | 4KB | 32 | 32 | 36 | 27 | **251** | 140 |
+| write | 4KB | 32 | 39 | 37 | 54 | **209** | 167 |
+| read | 1MB | 1 | 1486 | 1672 | 3099 | **3416** | 1761 |
+| write | 1MB | 1 | 907 | 2082 | **3602** | 2833 | 2796 |
+| read | 1MB | 8 | 2762 | 5172 | 4360 | 3926 | **5402** |
+| write | 1MB | 8 | 1858 | 5208 | 4018 | **7227** | 5060 |
+| read | 1MB | 32 | 4163 | **5386** | 2853 | 2999 | 5069 |
+| write | 1MB | 32 | 2566 | 4891 | 3455 | 6499 | **6758** |
+| read | 16MB | 1 | 4514 | 4754 | **6169** | 4980 | 4835 |
+| write | 16MB | 1 | 2264 | 3680 | 3750 | **3837** | 3629 |
+| read | 16MB | 8 | 5453 | **9461** | 7445 | 3679 | 6633 |
+| write | 16MB | 8 | 3574 | 6010 | 5931 | **7609** | 7528 |
 
-For detailed benchmark results and methodology, see the following reports:
+asyncfiles is fastest in 11 of 16 cells in this profile (10 of 14 and 10 of 16 in
+the 0.5 CPU / 256MB and 1 CPU / 512MB profiles). It is strongest on many small files
+with concurrency (up to ~7x on 4KB reads) and on writes; `aiofiles` and `anyio`
+still lead on some concurrent large reads. Numbers come from a single container run
+and are partly served by the page cache, so treat them as relative, not absolute.
+Full results for every profile (latency percentiles, CPU time, throttling, peak
+memory) are in [`benchmark/results/docker/`](benchmark/results/docker/) and are
+refreshed automatically on every release.
 
-- [Read Benchmark Results](benchmark/results/READ_BENCHMARK.md) - Performance comparison for read operations
-- [Write Benchmark Results](benchmark/results/WRITE_BENCHMARK.md) - Performance comparison for write operations
+Older, non-containerised reports:
 
-Run benchmarks yourself:
+- [Read Benchmark Results](benchmark/results/READ_BENCHMARK.md)
+- [Write Benchmark Results](benchmark/results/WRITE_BENCHMARK.md)
+
+### Run the benchmarks yourself
 
 ```bash
 python -m benchmark.benchmark_read
 python -m benchmark.benchmark_write
 ```
 
-### Resource-limited Docker benchmark
-
-Reads and writes (binary, 4KB/1MB/16MB, concurrency 1/8/32, cold page cache)
-against `aiofiles`, `aiofile` and `anyio`, inside containers with CPU/memory
-limits (`tiny`=0.5 CPU/256MB, `small`=1/512MB, `medium`=2/1GB):
+Resource-limited Docker benchmark (reads and writes, binary, 4KB/1MB/16MB,
+concurrency 1/8/32, cold page cache) against `aiofiles`, `aiofile` and `anyio`.
+Profiles: `tiny` = 0.5 CPU/256MB, `small` = 1 CPU/512MB, `medium` = 2 CPU/1GB.
 
 ```bash
 scripts/run_docker_benchmark.sh tiny small medium
 # optional disk throttling: IO_DEVICE=/dev/vda IO_READ_BPS=50mb IO_WRITE_BPS=30mb
 ```
 
-Results (JSON + Markdown) are written to `benchmark/results/docker/`.
-`io_uring` needs `--security-opt seccomp=unconfined` (the script sets it).
-
+Cells whose working set exceeds 50% of the memory limit are skipped, and each
+cell has a timeout (`--timeout`, default 120s) so a hung implementation cannot
+stall the whole run.
 
 ## 🛠️ Development
 
@@ -189,7 +232,7 @@ make compile
 # Debug build with line tracing
 make debug
 
-# Run tests
+# Run tests (the suite runs against both libuv and io_uring when available)
 make test
 ```
 
@@ -250,7 +293,7 @@ This project is currently in active development. The API may change. Production 
 - [x] CI/CD pipeline
 - [x] Performance optimizations
 - [x] More comprehensive benchmarks
-- [ ] Integration with io_uring?
+- [x] Integration with io_uring
 
 ## 💬 Support
 
