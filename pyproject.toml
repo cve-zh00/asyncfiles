@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-asyncfiles"
-version = "1.6.0"
+version = "1.6.1"
 description = "High-performance async file I/O library with io_uring and libuv backends"
 readme = "README.md"
 requires-python = ">=3.9"

@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.6.1 (2026-10-26)
+
+### Bug Fixes
+
+- Stop leaking an asyncio Future reference on every libuv operation
+  ([`b319a50`](https://github.com/cve-zh00/asyncfiles/commit/b319a50a25ae332c23852d2c046f827c41f525b2))
+
+### Performance Improvements
+
+- Zero-copy text writes, lighter open() and fstat on the open fd
+  ([`28b7d72`](https://github.com/cve-zh00/asyncfiles/commit/28b7d72acf44874ddb00d7d24c333a76a9cac5e0))
+
+
 ## v1.6.0 (2026-10-26)
 
 ### Continuous Integration
