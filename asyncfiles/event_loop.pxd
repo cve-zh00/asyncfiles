@@ -8,11 +8,13 @@ cdef class EventLoopPump:
         object _asyncio_loop
         int _backend_fd
         bint _running
+        bint _primed
         int _ref_count
 
     @staticmethod
     cdef EventLoopPump create(uv.uv_loop_t* uv_loop, object asyncio_loop)
     cdef inline int run_nowait(self) noexcept nogil
+    cdef inline void prime(self) noexcept
     cdef start(self)
     cdef acquire(self)
     cdef bint release(self)

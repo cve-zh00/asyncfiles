@@ -96,6 +96,7 @@ cdef class EventLoopPump:
         self._asyncio_loop = None
         self._backend_fd = -1
         self._running = False
+        self._primed = False
         self._ref_count = 0
 
     @staticmethod
@@ -110,6 +111,19 @@ cdef class EventLoopPump:
 
     cdef inline int run_nowait(self) noexcept nogil:
         return uv.uv_run(self.uv_loop, uv.UV_RUN_NOWAIT)
+
+    cdef inline void prime(self) noexcept:
+        """Run one libuv iteration after the first request is submitted.
+
+        libuv registers its internal async handle (the threadpool completion
+        signal) with the backend fd lazily, inside the first uv_run() that
+        sees an active request. On Linux the epoll fd stays silent until that
+        happens, so add_reader() would never fire and the first operation
+        would hang forever.
+        """
+        if not self._primed:
+            self._primed = True
+            self.run_nowait()
 
     cdef acquire(self):
         self._ref_count += 1

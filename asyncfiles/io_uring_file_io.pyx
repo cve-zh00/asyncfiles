@@ -10,6 +10,13 @@ from cpython.ref cimport Py_INCREF, Py_DECREF
 from libc.stdint cimport int64_t
 
 
+import asyncio
+
+# Large transfers are split so several io-wq workers/SQEs run in parallel
+DEF CHUNK_SIZE = 2 * 1024 * 1024
+DEF PARALLEL_THRESHOLD = 4 * 1024 * 1024
+
+
 cdef class IOUringFileReader:
     cdef:
         IOUringOperation io_op
@@ -26,53 +33,64 @@ cdef class IOUringFileReader:
         self.size = size
         self.binary = binary
 
+    async def _read_chunk(self, bytes py_buf, Py_ssize_t start, Py_ssize_t n,
+                          int64_t file_off):
+        """Read n bytes into py_buf[start:], retrying short reads until EOF."""
+        cdef:
+            char* base = PyBytes_AS_STRING(py_buf)
+            Py_ssize_t done = 0
+            int got
+
+        while done < n:
+            # py_buf is pinned by the pump until the CQE, even on cancellation
+            got = await self.io_op.read(
+                base + start + done, <unsigned int>(n - done),
+                file_off + done, py_buf
+            )
+            if got <= 0:
+                break
+            done += got
+        return done
+
     async def read(self, Py_ssize_t length=-1):
-        """Zero-copy read: allocate bytes, pass pointer to io_uring, return bytes.
-        
-        The buffer is kept alive via Py_INCREF until the CQE arrives,
-        regardless of whether the Future is cancelled. This prevents
-        use-after-free if the kernel is still writing when the Task is cancelled.
-        """
+        """Zero-copy read into a preallocated bytes object."""
         cdef:
             Py_ssize_t total
+            Py_ssize_t got
+            Py_ssize_t pos
+            Py_ssize_t n
             bytes py_buf
-            char* buf_ptr
-            int bytes_read
+            list tasks
 
         total = length if length >= 0 else max(0, self.size - self.offset)
         if total <= 0:
-            return b"" if self.binary else ""
+            return b""
 
-        # Pre-allocate bytes object — io_uring writes directly into it
         py_buf = PyBytes_FromStringAndSize(NULL, total)
         if py_buf is None:
             raise MemoryError()
 
-        buf_ptr = PyBytes_AS_STRING(py_buf)
-
-        # Submit read — the future will be resolved when CQE arrives.
-        # The buffer MUST remain alive until the kernel completes the op.
-        # We hold a strong reference via py_buf local variable which lives
-        # in the coroutine frame until await completes or is cancelled.
-        # Cancel safety: even if CancelledError propagates, the buffer
-        # won't be freed until this coroutine frame is garbage collected,
-        # which happens AFTER the CQE resolves the future (the pump holds
-        # a ref to the future which holds... actually no).
-        #
-        # Real cancel safety: we keep py_buf alive by storing it. The kernel
-        # writes into buf_ptr. If the task is cancelled, py_buf stays alive
-        # because it's referenced in this frame. The CQE will still arrive
-        # and _reap_completions will resolve/discard the future — the buffer
-        # remains valid throughout.
-        bytes_read = await self.io_op.read(buf_ptr, <unsigned int>total, self.offset)
-
-        if bytes_read <= 0:
-            return b"" if self.binary else ""
-        elif bytes_read == total:
-            return py_buf  # Zero-copy: return pre-allocated object directly
+        if total < PARALLEL_THRESHOLD:
+            got = await self._read_chunk(py_buf, 0, total, self.offset)
         else:
-            return py_buf[:bytes_read]  # Partial read: slice
+            tasks = []
+            pos = 0
+            while pos < total:
+                n = min(CHUNK_SIZE, total - pos)
+                tasks.append(self._read_chunk(py_buf, pos, n, self.offset + pos))
+                pos += n
+            counts = await asyncio.gather(*tasks)
+            got = 0
+            for c in counts:
+                got += c
+                if c < CHUNK_SIZE:
+                    break  # EOF reached inside this chunk
 
+        if got <= 0:
+            return b""
+        if got == total:
+            return py_buf
+        return py_buf[:got]
 
 cdef class IOUringFileWriter:
     cdef:
@@ -85,24 +103,44 @@ cdef class IOUringFileWriter:
         self.buffer_mgr = buffer_mgr
         self.offset = offset
 
-    async def write(self, bytes bdata):
-        """Zero-copy write: pass bytes internal buffer directly to io_uring.
-        
-        The bytes object is kept alive by the local variable in the coroutine
-        frame. The kernel reads from the buffer until the CQE arrives.
-        """
+    async def _write_chunk(self, bytes bdata, Py_ssize_t start, Py_ssize_t n,
+                           int64_t file_off):
+        """Write n bytes from bdata[start:], retrying short writes."""
         cdef:
-            char* buf_ptr
-            Py_ssize_t total_bytes
+            const char* base = PyBytes_AS_STRING(bdata)
+            Py_ssize_t done = 0
+            int put
 
-        total_bytes = PyBytes_GET_SIZE(bdata)
+        while done < n:
+            put = await self.io_op.write(
+                base + start + done, <unsigned int>(n - done),
+                file_off + done, bdata
+            )
+            if put <= 0:
+                raise OSError(5, "io_uring write made no progress")
+            done += put
+        return done
+
+    async def write(self, bytes bdata):
+        """Zero-copy write straight from the bytes buffer (pinned by the pump)."""
+        cdef:
+            Py_ssize_t total_bytes = PyBytes_GET_SIZE(bdata)
+            Py_ssize_t pos
+            Py_ssize_t n
+            list tasks
+
         if total_bytes == 0:
             return 0
 
-        buf_ptr = PyBytes_AS_STRING(bdata)
+        # offset < 0 means O_APPEND: must stay a single, ordered write
+        if self.offset < 0 or total_bytes < PARALLEL_THRESHOLD:
+            return await self._write_chunk(bdata, 0, total_bytes, self.offset)
 
-        # bdata is kept alive by the local variable in coroutine frame.
-        # Even if cancelled, bdata won't be freed until the frame is GC'd,
-        # which happens after the CQE resolves.
-        bytes_written = await self.io_op.write(buf_ptr, <unsigned int>total_bytes, self.offset)
-        return bytes_written
+        tasks = []
+        pos = 0
+        while pos < total_bytes:
+            n = min(CHUNK_SIZE, total_bytes - pos)
+            tasks.append(self._write_chunk(bdata, pos, n, self.offset + pos))
+            pos += n
+        await asyncio.gather(*tasks)
+        return total_bytes

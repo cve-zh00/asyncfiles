@@ -46,9 +46,13 @@ cdef IOUringPump _get_or_create_uring_pump(object asyncio_loop):
 
     if loop_id in _uring_pump_registry:
         pump = <IOUringPump>_uring_pump_registry[loop_id]
-        pump.acquire()
-        return pump
+        if pump._asyncio_loop is asyncio_loop:
+            pump.acquire()
+            return pump
+        # id() was reused by a different loop: drop the stale pump
+        _drop_pump(loop_id, pump)
 
+    _purge_closed_pumps()
     pump = IOUringPump.create(asyncio_loop, 256)
     pump.acquire()
     pump.start()
@@ -56,7 +60,23 @@ cdef IOUringPump _get_or_create_uring_pump(object asyncio_loop):
     return pump
 
 
+cdef _drop_pump(object loop_id, IOUringPump pump):
+    pump._stop()
+    _uring_pump_registry.pop(loop_id, None)
+
+
+cdef _purge_closed_pumps():
+    """Free rings that belong to event loops that were already closed."""
+    cdef IOUringPump pump
+    for loop_id, pump in list(_uring_pump_registry.items()):
+        if pump._ref_count <= 0 and pump._asyncio_loop.is_closed():
+            pump._stop(False)
+            _uring_pump_registry.pop(loop_id, None)
+
+
 cpdef release_uring_pump(object asyncio_loop):
+    """Drop one reference. The ring stays alive (idle) while its loop lives:
+    creating/destroying a ring per open() dominated small-file latency."""
     cdef:
         object loop_id = id(asyncio_loop)
         IOUringPump pump
@@ -65,9 +85,7 @@ cpdef release_uring_pump(object asyncio_loop):
         return
 
     pump = <IOUringPump>_uring_pump_registry[loop_id]
-    if pump.release():
-        pump._stop()
-        del _uring_pump_registry[loop_id]
+    pump.release()
 
 
 cdef class IOUringPump:
@@ -78,16 +96,20 @@ cdef class IOUringPump:
         self._running = False
         self._asyncio_loop = None
         self._pending_futures = {}
+        self._keepalive = {}
         self._submit_scheduled = False
+        self.has_ftruncate = False
         self._next_ud = 1
 
     @staticmethod
     cdef IOUringPump create(object asyncio_loop, unsigned int queue_depth):
         cdef IOUringPump pump = IOUringPump.__new__(IOUringPump)
         cdef int ret
+        cdef io_uring_probe* probe
 
         pump._asyncio_loop = asyncio_loop
         pump._pending_futures = {}
+        pump._keepalive = {}
         pump._ref_count = 0
         pump._running = False
         pump._submit_scheduled = False
@@ -105,11 +127,19 @@ cdef class IOUringPump:
             raise OSError("Failed to create eventfd")
 
         # Register eventfd with io_uring
+        # Not the _async variant: it skips task_work completions (cold-cache
+        # disk reads) and would lose wakeups.
         ret = io_uring_register_eventfd(&pump.ring, pump.eventfd)
         if ret < 0:
             close(pump.eventfd)
             io_uring_queue_exit(&pump.ring)
             raise OSError(-ret, "io_uring_register_eventfd failed")
+
+        # IORING_OP_FTRUNCATE only exists on Linux >= 6.9
+        probe = io_uring_get_probe_ring(&pump.ring)
+        if probe != NULL:
+            pump.has_ftruncate = io_uring_opcode_supported(probe, IORING_OP_FTRUNCATE) != 0
+            io_uring_free_probe(probe)
 
         return pump
 
@@ -118,6 +148,14 @@ cdef class IOUringPump:
         cdef uint64_t ud = self._next_ud
         self._next_ud += 1
         return ud
+
+    cdef io_uring_sqe* get_sqe(self) noexcept:
+        """Get an SQE; if the SQ ring is full, submit pending ones and retry."""
+        cdef io_uring_sqe* sqe = io_uring_get_sqe(&self.ring)
+        if sqe == NULL:
+            io_uring_submit(&self.ring)
+            sqe = io_uring_get_sqe(&self.ring)
+        return sqe
 
     cdef acquire(self):
         self._ref_count += 1
@@ -153,6 +191,8 @@ cdef class IOUringPump:
         if ret < 0:
             # Submit failed - this shouldn't happen normally
             pass
+        # Inline completions are already in the CQ: reap them without a loop turn
+        self._reap_completions()
 
     def _on_event(self):
         """Called by asyncio when eventfd is readable (CQEs available)."""
@@ -184,6 +224,10 @@ cdef class IOUringPump:
             res = cqe.res
             io_uring_cqe_seen(&self.ring, cqe)
 
+            # The kernel is done with the user buffer: release it
+            if self._keepalive:
+                self._keepalive.pop(user_data, None)
+
             # Look up and resolve the Future
             entry = self._pending_futures.pop(user_data, None)
             if entry is None:
@@ -211,31 +255,40 @@ cdef class IOUringPump:
                         future.set_result(res)
 
     cdef object submit_sqe(self, object future, uint64_t user_data):
-        """Register future and schedule a deferred submit.
-        
-        Does NOT call io_uring_submit immediately. Instead, schedules
-        a flush at the end of the current event loop tick. Multiple
-        SQEs prepared in the same tick share a single syscall.
+        """Register future and submit.
+
+        Submits immediately when the ring is idle (lowest latency for
+        sequential use); otherwise defers to the end of the tick so that
+        concurrent SQEs share a single io_uring_enter.
         """
+        cdef bint idle = not self._pending_futures and not self._submit_scheduled
         self._pending_futures[user_data] = future
-        self.schedule_submit()
+        if idle:
+            # Nothing else in flight: submit now and skip a loop iteration
+            io_uring_submit(&self.ring)
+            self._reap_completions()
+        else:
+            self.schedule_submit()
         return future
 
-    cdef _stop(self):
+    cdef _stop(self, bint unregister=True):
         """Unregister eventfd and clean up io_uring resources."""
         if not self._running:
             return
         self._running = False
 
-        try:
-            self._asyncio_loop.remove_reader(self.eventfd)
-        except (ValueError, OSError):
-            pass
+        if unregister:
+            try:
+                self._asyncio_loop.remove_reader(self.eventfd)
+            except (ValueError, OSError):
+                pass
 
         close(self.eventfd)
         self.eventfd = -1
         io_uring_queue_exit(&self.ring)
 
     def __dealloc__(self):
+        if self._running:
+            io_uring_queue_exit(&self.ring)
         if self.eventfd >= 0:
             close(self.eventfd)

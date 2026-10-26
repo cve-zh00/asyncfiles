@@ -484,3 +484,45 @@ async def test_text_iterator_unicode(temp_file):
             result_lines.append(line)
 
     assert result_lines == lines
+
+
+async def test_large_binary_roundtrip_chunked(temp_file):
+    """Archivos > umbral paralelo se leen/escriben troceados y en orden"""
+    data = os.urandom(9 * 1024 * 1024 + 123)
+
+    async with async_open(temp_file, "wb") as f:
+        await f.write(data)
+    assert Path(temp_file).read_bytes() == data
+
+    async with async_open(temp_file, "rb") as f:
+        assert await f.read() == data
+
+
+async def test_read_past_eof_is_empty_and_short_read(temp_file):
+    Path(temp_file).write_bytes(b"abcdef")
+    async with async_open(temp_file, "rb") as f:
+        assert await f.read(100) == b"abcdef"
+        assert await f.read(10) == b""
+
+
+async def test_cancelled_read_does_not_corrupt(temp_file):
+    """Cancelar lecturas en vuelo no debe provocar use-after-free"""
+    data = os.urandom(8 * 1024 * 1024)
+    Path(temp_file).write_bytes(data)
+
+    for _ in range(20):
+        async with async_open(temp_file, "rb") as f:
+            task = asyncio.ensure_future(f.read())
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+    async with async_open(temp_file, "rb") as f:
+        assert await f.read() == data
+
+
+async def test_missing_file_raises(tmp_path):
+    with pytest.raises(OSError):
+        async with async_open(str(tmp_path / "nope.bin"), "rb"):
+            pass

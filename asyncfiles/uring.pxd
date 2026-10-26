@@ -18,6 +18,9 @@ cdef extern from "liburing.h" nogil:
         uint32_t len
         uint64_t user_data
 
+    struct io_uring_probe:
+        pass
+
     struct io_uring_cqe:
         uint64_t user_data
         int32_t res
@@ -41,12 +44,19 @@ cdef extern from "liburing.h" nogil:
     int io_uring_peek_cqe(io_uring* ring, io_uring_cqe** cqe_ptr)
     void io_uring_cqe_seen(io_uring* ring, io_uring_cqe* cqe)
 
+    # Opcode probing
+    io_uring_probe* io_uring_get_probe_ring(io_uring* ring)
+    void io_uring_free_probe(io_uring_probe* probe)
+    int io_uring_opcode_supported(const io_uring_probe* probe, int op)
+
     # eventfd registration
     int io_uring_register_eventfd(io_uring* ring, int fd)
+    int io_uring_register_eventfd_async(io_uring* ring, int fd)
 
     # SQE preparation helpers
     void io_uring_prep_openat(io_uring_sqe* sqe, int dfd, const char* path,
                               int flags, unsigned int mode)
+    void io_uring_prep_nop(io_uring_sqe* sqe)
     void io_uring_prep_close(io_uring_sqe* sqe, int fd)
     void io_uring_prep_read(io_uring_sqe* sqe, int fd, void* buf,
                             unsigned int nbytes, uint64_t offset)
@@ -55,3 +65,7 @@ cdef extern from "liburing.h" nogil:
     void io_uring_prep_statx(io_uring_sqe* sqe, int dfd, const char* path,
                              int flags, unsigned int mask, statx* statxbuf)
     void io_uring_prep_ftruncate(io_uring_sqe* sqe, int fd, int64_t len)
+
+cdef extern from "liburing.h" nogil:
+    enum:
+        IORING_OP_FTRUNCATE

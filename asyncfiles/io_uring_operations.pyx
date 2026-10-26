@@ -12,6 +12,7 @@ from cpython.bytes cimport PyBytes_FromStringAndSize, PyBytes_AS_STRING
 from cpython.ref cimport Py_INCREF, Py_DECREF
 from cpython.long cimport PyLong_FromVoidPtr, PyLong_AsVoidPtr
 from cpython.unicode cimport PyUnicode_AsUTF8
+import os
 
 
 cdef inline object _new_future(object loop):
@@ -57,6 +58,9 @@ cdef class IOUringOperation:
     def py_open_file(self, int flags):
         return self.open_file(flags)
 
+    def py_open_and_stat(self, int flags):
+        return self.open_and_stat(flags)
+
     def py_close_file(self):
         return self.close_file()
 
@@ -73,7 +77,7 @@ cdef class IOUringOperation:
             io_uring_sqe* sqe
             uint64_t ud = self.pump.alloc_user_data()
 
-        sqe = io_uring_get_sqe(&self.pump.ring)
+        sqe = self.pump.get_sqe()
         if sqe == NULL:
             future.set_exception(OSError(11, "SQ ring full"))
             return future
@@ -82,6 +86,56 @@ cdef class IOUringOperation:
         sqe.user_data = ud
         return self.pump.submit_sqe(future, ud)
 
+    cdef tuple open_and_stat(self, int flags):
+        """Submit OPENAT linked to STATX(path) in one submission.
+
+        Returns (open_future, stat_future). The stat runs only after the open
+        succeeds (IOSQE_IO_LINK), so it sees the file as created/truncated.
+        """
+        cdef:
+            object open_future = _new_future(self.loop)
+            object stat_future = _new_future(self.loop)
+            io_uring_sqe* sqe_open
+            io_uring_sqe* sqe_stat
+            uint64_t ud_open = self.pump.alloc_user_data()
+            uint64_t ud_stat = self.pump.alloc_user_data()
+            statx* stx
+            bint idle
+
+        stx = <statx*>malloc(sizeof(statx))
+        if stx == NULL:
+            raise MemoryError()
+        memset(stx, 0, sizeof(statx))
+
+        sqe_open = self.pump.get_sqe()
+        sqe_stat = self.pump.get_sqe() if sqe_open != NULL else NULL
+        if sqe_open == NULL or sqe_stat == NULL:
+            free(stx)
+            if sqe_open != NULL:
+                # Neutralise the already-prepared slot
+                io_uring_prep_nop(sqe_open)
+                sqe_open.user_data = 0
+            open_future.set_exception(OSError(11, "SQ ring full"))
+            stat_future.set_exception(OSError(11, "SQ ring full"))
+            stat_future.exception()
+            return open_future, stat_future
+
+        io_uring_prep_openat(sqe_open, -100, self.path_cstr, flags, 0o644)
+        sqe_open.flags |= 4  # IOSQE_IO_LINK
+        sqe_open.user_data = ud_open
+        io_uring_prep_statx(sqe_stat, -100, self.path_cstr, 0, 0x01, stx)
+        sqe_stat.user_data = ud_stat
+
+        idle = not self.pump._pending_futures and not self.pump._submit_scheduled
+        self.pump._pending_futures[ud_open] = open_future
+        self.pump._pending_futures[ud_stat] = (stat_future, PyLong_FromVoidPtr(stx))
+        if idle:
+            io_uring_submit(&self.pump.ring)
+            self.pump._reap_completions()
+        else:
+            self.pump.schedule_submit()
+        return open_future, stat_future
+
     cdef object close_file(self):
         """Submit IORING_OP_CLOSE SQE."""
         cdef:
@@ -89,7 +143,7 @@ cdef class IOUringOperation:
             io_uring_sqe* sqe
             uint64_t ud = self.pump.alloc_user_data()
 
-        sqe = io_uring_get_sqe(&self.pump.ring)
+        sqe = self.pump.get_sqe()
         if sqe == NULL:
             future.set_exception(OSError(11, "SQ ring full"))
             return future
@@ -98,36 +152,43 @@ cdef class IOUringOperation:
         sqe.user_data = ud
         return self.pump.submit_sqe(future, ud)
 
-    cdef object read(self, char* buf, unsigned int nbytes, int64_t offset):
-        """Submit IORING_OP_READ SQE. Buffer must remain valid until CQE."""
+    cdef object read(self, char* buf, unsigned int nbytes, int64_t offset,
+                     object keep=None):
+        """Submit IORING_OP_READ SQE. `keep` pins the buffer until the CQE
+        arrives, even if the awaiting task is cancelled."""
         cdef:
             object future = _new_future(self.loop)
             io_uring_sqe* sqe
             uint64_t ud = self.pump.alloc_user_data()
 
-        sqe = io_uring_get_sqe(&self.pump.ring)
+        sqe = self.pump.get_sqe()
         if sqe == NULL:
             future.set_exception(OSError(11, "SQ ring full"))
             return future
 
         io_uring_prep_read(sqe, self.fd, buf, nbytes, offset)
         sqe.user_data = ud
+        if keep is not None:
+            self.pump._keepalive[ud] = keep
         return self.pump.submit_sqe(future, ud)
 
-    cdef object write(self, const char* buf, unsigned int nbytes, int64_t offset):
-        """Submit IORING_OP_WRITE SQE. Buffer must remain valid until CQE."""
+    cdef object write(self, const char* buf, unsigned int nbytes, int64_t offset,
+                      object keep=None):
+        """Submit IORING_OP_WRITE SQE. `keep` pins the buffer until the CQE."""
         cdef:
             object future = _new_future(self.loop)
             io_uring_sqe* sqe
             uint64_t ud = self.pump.alloc_user_data()
 
-        sqe = io_uring_get_sqe(&self.pump.ring)
+        sqe = self.pump.get_sqe()
         if sqe == NULL:
             future.set_exception(OSError(11, "SQ ring full"))
             return future
 
         io_uring_prep_write(sqe, self.fd, buf, nbytes, offset)
         sqe.user_data = ud
+        if keep is not None:
+            self.pump._keepalive[ud] = keep
         return self.pump.submit_sqe(future, ud)
 
     cdef object get_stat(self):
@@ -145,7 +206,7 @@ cdef class IOUringOperation:
             return future
         memset(stx, 0, sizeof(statx))
 
-        sqe = io_uring_get_sqe(&self.pump.ring)
+        sqe = self.pump.get_sqe()
         if sqe == NULL:
             free(stx)
             future.set_exception(OSError(11, "SQ ring full"))
@@ -160,13 +221,18 @@ cdef class IOUringOperation:
         return future
 
     cdef object truncate_file(self, int64_t length):
-        """Submit IORING_OP_FTRUNCATE SQE."""
+        """Submit IORING_OP_FTRUNCATE SQE (thread fallback on kernels < 6.9)."""
         cdef:
-            object future = _new_future(self.loop)
+            object future
             io_uring_sqe* sqe
-            uint64_t ud = self.pump.alloc_user_data()
+            uint64_t ud
 
-        sqe = io_uring_get_sqe(&self.pump.ring)
+        if not self.pump.has_ftruncate:
+            return self.loop.run_in_executor(None, os.ftruncate, self.fd, length)
+
+        future = _new_future(self.loop)
+        ud = self.pump.alloc_user_data()
+        sqe = self.pump.get_sqe()
         if sqe == NULL:
             future.set_exception(OSError(11, "SQ ring full"))
             return future

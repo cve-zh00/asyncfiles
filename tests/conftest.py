@@ -6,6 +6,34 @@ from pathlib import Path
 import pytest
 
 
+def _available_backends():
+    from asyncfiles.backend import resolve_backend
+
+    backends = ["libuv"]
+    try:
+        resolve_backend("io_uring")
+    except OSError:
+        pass
+    else:
+        backends.append("io_uring")
+    return backends
+
+
+@pytest.fixture(autouse=True, params=_available_backends())
+def backend(request, monkeypatch):
+    """Run every test once per available backend.
+
+    ``asyncfiles.open`` resolves the backend at call time, so forcing the
+    resolver exercises each implementation without touching the tests.
+    """
+    import asyncfiles.backend as backend_module
+
+    monkeypatch.setattr(
+        backend_module, "resolve_backend", lambda _requested: request.param
+    )
+    return request.param
+
+
 @pytest.fixture(scope="session")
 def event_loop_policy():
     """Set the event loop policy for the test session."""

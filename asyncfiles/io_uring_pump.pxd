@@ -1,6 +1,6 @@
 # cython: language_level=3
 
-from .uring cimport io_uring
+from .uring cimport io_uring, io_uring_sqe
 from libc.stdint cimport uint64_t
 
 cdef class IOUringPump:
@@ -10,9 +10,11 @@ cdef class IOUringPump:
         int _ref_count
         bint _running
         bint _submit_scheduled
+        public bint has_ftruncate
         uint64_t _next_ud
         object _asyncio_loop
         dict _pending_futures
+        dict _keepalive
 
     @staticmethod
     cdef IOUringPump create(object asyncio_loop, unsigned int queue_depth)
@@ -21,7 +23,8 @@ cdef class IOUringPump:
     cdef bint release(self)
     cdef start(self)
     cdef schedule_submit(self)
-    cdef _stop(self)
+    cdef io_uring_sqe* get_sqe(self) noexcept
+    cdef _stop(self, bint unregister=*)
     cdef _reap_completions(self)
     cdef object submit_sqe(self, object future, uint64_t user_data)
 

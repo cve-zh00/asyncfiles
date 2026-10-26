@@ -13,6 +13,11 @@ from cpython.unicode cimport PyUnicode_AsUTF8
 from libc.stdint cimport int64_t
 
 
+def _consume_future_result(fut):
+    if not fut.cancelled():
+        fut.exception()
+
+
 cdef class BaseFile:
     def __init__(self, str path, FileMode mode, size_t buffer_size, object loop,
                  str backend="libuv"):
@@ -50,12 +55,26 @@ cdef class BaseFile:
 
     async def __aenter__(self):
         if self.backend == "io_uring":
-            self.fd = await self.io_op_uring.py_open_file(self.flags)
-            self.io_op_uring.fd = self.fd
             if self.file_mode.readable:
-                self.size = await self.io_op_uring.py_get_stat()
+                # open + statx are linked and submitted together (1 syscall)
+                open_future, stat_future = self.io_op_uring.py_open_and_stat(self.flags)
+                try:
+                    self.fd = await open_future
+                except BaseException:
+                    if stat_future.done() and not stat_future.cancelled():
+                        stat_future.exception()  # mark retrieved (-ECANCELED)
+                    else:
+                        stat_future.add_done_callback(_consume_future_result)
+                    raise
+                self.io_op_uring.fd = self.fd
+                self.size = await stat_future
+            else:
+                self.fd = await self.io_op_uring.py_open_file(self.flags)
+                self.io_op_uring.fd = self.fd
         else:
-            self.fd = await self.io_op.open_file(self.flags)
+            open_future = self.io_op.open_file(self.flags)
+            self.pump.prime()
+            self.fd = await open_future
             self.io_op.fd = self.fd
             if self.file_mode.readable:
                 self.size = await self.io_op.get_stat()

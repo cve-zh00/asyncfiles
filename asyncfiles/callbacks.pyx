@@ -17,10 +17,12 @@ cdef void cb_open(uv.uv_fs_t* req) noexcept with gil:
 
     try:
         if err < 0:
-            future.set_exception(OSError(-err, "open failed"))
+            if not future.done():
+                future.set_exception(OSError(-err, "open failed"))
         else:
             result_obj = req.result
-            future.set_result(result_obj)
+            if not future.done():
+                future.set_result(result_obj)
 
     finally:
         uv.uv_fs_req_cleanup(req)
@@ -36,9 +38,11 @@ cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil:
 
     try:
         if err < 0:
-            future.set_exception(OSError(-err, "stat failed"))
+            if not future.done():
+                future.set_exception(OSError(-err, "stat failed"))
         else:
-            future.set_result(req.statbuf.st_size)
+            if not future.done():
+                future.set_result(req.statbuf.st_size)
 
     finally:
         uv.uv_fs_req_cleanup(req)
@@ -54,10 +58,12 @@ cdef void cb_close(uv.uv_fs_t* req) noexcept with gil:
     cdef int result_obj
     try:
         if err < 0:
-            future.set_exception(OSError(-err, "close failed"))
+            if not future.done():
+                future.set_exception(OSError(-err, "close failed"))
         else:
             result_obj = req.result
-            future.set_result(result_obj)
+            if not future.done():
+                future.set_result(result_obj)
 
     finally:
         uv.uv_fs_req_cleanup(req)
@@ -74,9 +80,11 @@ cdef void cb_ftruncate(uv.uv_fs_t* req) noexcept with gil:
 
     try:
         if err < 0:
-            future.set_exception(OSError(-err, "ftruncate failed"))
+            if not future.done():
+                future.set_exception(OSError(-err, "ftruncate failed"))
         else:
-            future.set_result(0)
+            if not future.done():
+                future.set_result(0)
     finally:
         uv.uv_fs_req_cleanup(req)
         free(req)
@@ -90,9 +98,11 @@ cdef void cb_write(uv.uv_fs_t* req) noexcept with gil:
     cdef Py_ssize_t err = req.result
     try:
         if err < 0:
-            future.set_exception(OSError(<int>-err, "write failed"))
+            if not future.done():
+                future.set_exception(OSError(<int>-err, "write failed"))
         else:
-            future.set_result(err)
+            if not future.done():
+                future.set_result(err)
     finally:
         if ctx._refs != NULL:
             Py_DECREF(<object> ctx._refs)
@@ -141,7 +151,8 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
 
     try:
         if result < 0:
-            future.set_exception(OSError(-result, "read failed"))
+            if not future.done():
+                future.set_exception(OSError(-result, "read failed"))
             # Free ctx on error path since no _ReadResult will own it
             if ctx.buffer_mem != NULL:
                 free(ctx.buffer_mem)
@@ -158,7 +169,8 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
             wrapper = _ReadResult()
             wrapper.ctx = ctx
             wrapper.bytes_read = result
-            future.set_result(wrapper)
+            if not future.done():
+                future.set_result(wrapper)
     finally:
         uv.uv_fs_req_cleanup(req)
         free(req)
