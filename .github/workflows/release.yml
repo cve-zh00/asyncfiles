@@ -125,8 +125,9 @@ jobs:
           CIBW_ARCHS: ${{ matrix.cibw_arch }}
           CIBW_TEST_SKIP: "*universal2:arm64"
           CIBW_BEFORE_BUILD_LINUX: >-
-            yum install -y autoconf automake libtool ||
-            apt-get update && apt-get install -y autoconf automake libtool
+            (command -v yum && yum install -y autoconf automake libtool) ||
+            (command -v apk && apk add --no-cache autoconf automake libtool) ||
+            (apt-get update && apt-get install -y autoconf automake libtool)
 
       - uses: actions/upload-artifact@v7
         with:
