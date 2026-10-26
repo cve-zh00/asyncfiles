@@ -7,17 +7,30 @@
 [![PyPI](https://img.shields.io/pypi/v/py-asyncfiles.svg)](https://pypi.org/project/py-asyncfiles/)
 [![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196.svg)](https://www.conventionalcommits.org/)
 
-**asyncfiles** is a high-performance async file I/O library for Python, built using Cython on two backends: native **io_uring** (Linux 5.6+) and [libuv](https://libuv.org/) (Linux, macOS, BSD). It provides non-blocking file operations with efficient event-loop integration and improved performance compared to typical Python thread-pool wrappers.
+**asyncfiles** is a high-performance async file I/O library for Python, built using Cython on two backends: native **io_uring** (Linux 5.6+) and [libuv](https://libuv.org/) (Linux, macOS, BSD). File operations never block the asyncio event loop. On Linux the `io_uring` backend submits I/O to the kernel without any thread pool; the `libuv` backend runs operations on libuv's own C thread pool (see [How it works](#-how-it-works)), which avoids the Python-level `run_in_executor` overhead of typical thread-pool wrappers.
 
 ## 🚀 Features
 
 - **Two backends**: native `io_uring` on Linux (auto-selected when available) and `libuv` everywhere else
-- **True Async I/O**: Built directly on io_uring / libuv async filesystem operations
+- **Non-blocking I/O**: `io_uring` is kernel-level async I/O with no thread pool; `libuv` offloads to its internal C thread pool (POSIX has no portable async file API)
 - **High Performance**: Cython-optimized with zero-copy buffer operations, batched submissions and parallel chunked I/O for large files
 - **Cancellation-safe**: cancelling an in-flight read/write never frees a buffer the kernel is still using
 - **Simple API**: Familiar async context manager interface
 - **Type Hints**: Full typing support for better IDE integration
 - **Memory Efficient**: Configurable buffer sizes for optimal memory usage
+
+## 🧠 How it works
+
+| Backend | Platform | Mechanism | Threads |
+|---------|----------|-----------|---------|
+| `io_uring` | Linux 5.6+ | Submission/completion rings shared with the kernel | None for reads/writes (only `ftruncate` falls back to a thread on kernels < 6.9) |
+| `libuv` | Linux, macOS, BSD | `uv_fs_*` requests | libuv's thread pool (4 threads by default, tune with `UV_THREADPOOL_SIZE`) |
+
+Regular files do not support readiness-based polling (`epoll` always reports them ready), so
+on most platforms "async file I/O" means offloading blocking syscalls to threads. asyncfiles
+does that in C/Cython and completes the `asyncio` futures directly (the `libuv` backend polls
+its loop once per asyncio iteration; `io_uring` is woken through an `eventfd`) instead of going
+through Python's `run_in_executor`. `io_uring` is the only path that avoids threads entirely.
 
 ## 📦 Installation
 

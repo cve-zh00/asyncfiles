@@ -312,7 +312,7 @@ if sys.platform.startswith("linux"):
 setup(
     name="py-asyncfiles",
     version=VERSION,
-    description="High-performance async file I/O library built on libuv",
+    description="High-performance async file I/O library with io_uring and libuv backends",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     author="bastian garcia",

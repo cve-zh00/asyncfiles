@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "py-asyncfiles"
 version = "1.5.0"
-description = "High-performance async file I/O library built on libuv"
+description = "High-performance async file I/O library with io_uring and libuv backends"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
