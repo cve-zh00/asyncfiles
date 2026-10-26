@@ -158,15 +158,15 @@ exclude_lines = [
     "@abstractmethod",
 ]
 
+
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["asyncfiles/__init__.py:__version__"]
-branch = "main"
-upload_to_vcs_release = true
-upload_to_pypi = false
-build_command = "pip install build && python -m build --sdist"
-major_on_zero = true
 tag_format = "v{version}"
+commit_parser = "conventional"
+commit_message = "chore(release): {version} [skip ci]"
+major_on_zero = true
+allow_zero_version = false
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = ["feat", "fix", "perf", "refactor", "docs", "style", "test", "build", "ci", "chore"]
@@ -174,10 +174,19 @@ minor_tags = ["feat"]
 patch_tags = ["fix", "perf", "refactor"]
 
 [tool.semantic_release.changelog]
-template_dir = "templates"
+mode = "update"
+exclude_commit_patterns = ['''chore\(release\):.*''', '''chore\(benchmark\):.*''']
+
+[tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"
-exclude_commit_patterns = []
 
 [tool.semantic_release.branches.main]
 match = "(main|master)"
 prerelease = false
+
+[tool.semantic_release.remote]
+type = "github"
+token = { env = "GH_TOKEN" }
+
+[tool.semantic_release.publish]
+upload_to_vcs_release = true

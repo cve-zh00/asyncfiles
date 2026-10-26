@@ -1,0 +1,214 @@
+name: Release
+
+# Every push to main runs the test-suite and then python-semantic-release.
+# When the Conventional Commits since the last tag warrant a new version, PSR
+# bumps the version, updates CHANGELOG.md, creates the `vX.Y.Z` tag and the
+# GitHub release. The remaining jobs run in this same workflow, on that tag,
+# because tags pushed with GITHUB_TOKEN do not trigger other workflows.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    uses: ./.github/workflows/tests.yml
+
+  version:
+    name: Version & tag
+    needs: [test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Python Semantic Release
+        id: release
+        uses: python-semantic-release/python-semantic-release@v10
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_committer_name: "github-actions[bot]"
+          git_committer_email: "41898282+github-actions[bot]@users.noreply.github.com"
+
+  build-sdist:
+    name: Build sdist
+    needs: [version]
+    if: needs.version.outputs.released == 'true'
+    runs-on: ubuntu-22.04
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          submodules: true
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - name: Build source distribution
+        run: |
+          python -m pip install --upgrade setuptools wheel pip "Cython~=3.0"
+          python setup.py sdist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-sdist
+          path: dist/*.tar.*
+
+  build-wheels:
+    name: Wheels (${{ matrix.os }}, ${{ matrix.python }}, ${{ matrix.cibw_arch }})
+    needs: [version]
+    if: needs.version.outputs.released == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, ubuntu-22.04-arm]
+        python:
+          - "cp39"
+          - "cp310"
+          - "cp311"
+          - "cp312"
+          - "cp313"
+        cibw_arch: ["x86_64", "aarch64", "universal2"]
+        exclude:
+          - os: ubuntu-latest
+            cibw_arch: universal2
+          - os: ubuntu-latest
+            cibw_arch: aarch64
+          - os: macos-latest
+            cibw_arch: aarch64
+          - os: ubuntu-22.04-arm
+            cibw_arch: x86_64
+          - os: ubuntu-22.04-arm
+            cibw_arch: universal2
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          submodules: true
+
+      - name: Install macOS deps
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew install gnu-sed libtool autoconf automake
+
+      - uses: pypa/cibuildwheel@v4.3.4
+        env:
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_BUILD: ${{ matrix.python }}-*
+          CIBW_ARCHS: ${{ matrix.cibw_arch }}
+          CIBW_TEST_SKIP: "*universal2:arm64"
+          CIBW_BEFORE_BUILD_LINUX: >-
+            yum install -y autoconf automake libtool ||
+            apt-get update && apt-get install -y autoconf automake libtool
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-wheels-${{ matrix.os }}-${{ matrix.python }}-${{ matrix.cibw_arch }}
+          path: wheelhouse/*.whl
+
+  publish:
+    name: Publish to PyPI
+    needs: [version, build-sdist, build-wheels]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/py-asyncfiles/
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Attach distributions to the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${{ needs.version.outputs.tag }}" dist/* --clobber
+
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          verbose: true
+
+  benchmark:
+    # Runs the resource-limited Docker benchmark (tiny/small/medium) against the
+    # released code, attaches the results to the release and commits the
+    # refreshed benchmark/results/docker/* back to main.
+    name: Docker benchmark
+    needs: [version]
+    if: needs.version.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          fetch-depth: 0
+          submodules: true
+
+      - name: Run Docker benchmark
+        run: scripts/run_docker_benchmark.sh tiny small medium
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bench-results
+          path: benchmark/results/docker/*
+
+      - name: Attach results to the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$TAG" benchmark/results/docker/*.md benchmark/results/docker/*.json --clobber
+
+      - name: Commit refreshed results to main
+        run: |
+          cp -r benchmark/results/docker "$RUNNER_TEMP/bench-results"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -f -B main origin/main
+          rm -rf benchmark/results/docker
+          cp -r "$RUNNER_TEMP/bench-results" benchmark/results/docker
+          git add benchmark/results/docker
+          if git diff --cached --quiet; then
+            echo "No benchmark changes to commit"
+          else
+            git commit -m "chore(benchmark): update docker benchmark results for $TAG [skip ci]"
+            git push origin main
+          fi
