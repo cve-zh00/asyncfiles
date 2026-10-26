@@ -88,8 +88,45 @@ jobs:
           name: dist-wheels-${{ matrix.os }}-${{ matrix.python }}-${{ matrix.cibw_arch }}
           path: wheelhouse/*.whl
 
+  benchmark:
+    # Runs the resource-limited Docker benchmark (tiny/small/medium profiles)
+    # and commits the refreshed results back to the release PR branch.
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+          submodules: true
+
+      - name: Run Docker benchmark
+        run: scripts/run_docker_benchmark.sh tiny small medium
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: benchmark/results/docker/*
+
+      - name: Commit updated benchmark results
+        # Fork PRs get a read-only token: results are still attached to the release
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmark/results/docker
+          if git diff --cached --quiet; then
+            echo "No benchmark changes to commit"
+          else
+            git commit -m "chore(benchmark): update docker benchmark results [skip ci]"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          fi
+
   publish:
-    needs: [build-sdist, build-wheels]
+    needs: [build-sdist, build-wheels, benchmark]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -106,11 +143,19 @@ jobs:
           merge-multiple: true
           path: dist/
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results/
+
 
       - name: Publish Github Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*
+            bench-results/*.md
+            bench-results/*.json
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
