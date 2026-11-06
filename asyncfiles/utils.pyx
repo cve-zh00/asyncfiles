@@ -37,7 +37,7 @@ cpdef FileMode mode_to_posix(const char* mode):
         int flags = 0
         bytes ch
 
-    # Iteración sobre el modo
+
     for ch in mode:
 
         # BASE MODES
@@ -72,7 +72,6 @@ cpdef FileMode mode_to_posix(const char* mode):
             appending = True
             flags |= O_CREAT | O_APPEND
 
-        # MODIFICADORES
         elif ch == b"+":
             if plus:
                 raise ValueError("Invalid mode: duplicate '+'")
@@ -87,13 +86,12 @@ cpdef FileMode mode_to_posix(const char* mode):
             text_mode = True
 
         elif ch == b"U":
-            # legacy universal-newline, ignorado
+ 
             readable = True
 
         else:
             raise ValueError(f"Invalid mode character: {ch!r}")
 
-    # VALIDACIONES
     if not base_mode_found:
         raise ValueError("Invalid mode: must contain 'r', 'w', 'x', or 'a'")
 
