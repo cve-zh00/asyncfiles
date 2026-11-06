@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.8.0 (2026-11-06)
+
+### Continuous Integration
+
+- Modify benchmark sizes and default parameters
+  ([`eef8973`](https://github.com/cve-zh00/asyncfiles/commit/eef89736354ed5b6906071b23c429c831e3f9828))
+
+### Features
+
+- Drop Python 3.9 support
+  ([`4d1acde`](https://github.com/cve-zh00/asyncfiles/commit/4d1acdeb8a3fa90d5eee1bd4546f6924b438cc04))
+
+
 ## v1.7.0 (2026-10-26)
 
 ### Features
