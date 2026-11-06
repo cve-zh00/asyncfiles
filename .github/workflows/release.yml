@@ -85,7 +85,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, ubuntu-22.04-arm]
         python:
-          - "cp39"
           - "cp310"
           - "cp311"
           - "cp312"

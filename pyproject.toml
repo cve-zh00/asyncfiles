@@ -7,7 +7,7 @@ name = "py-asyncfiles"
 version = "1.7.0"
 description = "High-performance async file I/O library with io_uring and libuv backends"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
@@ -32,7 +32,6 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: Unix",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -92,7 +91,7 @@ markers = [
 
 [tool.black]
 line-length = 88
-target-version = ["py39", "py310", "py311", "py312"]
+target-version = ["py310", "py311", "py312"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -120,7 +119,7 @@ ensure_newline_before_comments = true
 skip_glob = ["vendor/*", "build/*"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

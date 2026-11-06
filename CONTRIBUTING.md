@@ -11,7 +11,7 @@ make compile
 make test
 ```
 
-Requirements: Python 3.9+, a C compiler and `autoconf automake libtool`. POSIX only (Linux, macOS, BSD). The generated `asyncfiles/*.c` files are not tracked in git.
+Requirements: Python 3.10+, a C compiler and `autoconf automake libtool`. POSIX only (Linux, macOS, BSD). The generated `asyncfiles/*.c` files are not tracked in git.
 
 The test suite runs against both backends (libuv and, on Linux, io_uring).
 
