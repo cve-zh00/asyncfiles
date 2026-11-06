@@ -4,7 +4,7 @@ from .cpython cimport PyObject
 
 cdef struct FSOpenContext:
     PyObject* future       # Referencia al Future de asyncio
-    char* name_file
+    const char* name_file
     int flags
     int fd
 

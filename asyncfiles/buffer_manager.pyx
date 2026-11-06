@@ -35,7 +35,7 @@ cdef class BufferManager:
             for i in range(nbufs):
                 offset = i * self.buffer_size
                 chunk_len = total_bytes - offset
-                if chunk_len > self.buffer_size:
+                if <size_t>chunk_len > self.buffer_size:
                     chunk_len = self.buffer_size
                 bufs[i] = uv.uv_buf_init(base_ptr + offset, <unsigned int>chunk_len)
 

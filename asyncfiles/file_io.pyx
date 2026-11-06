@@ -139,7 +139,7 @@ cdef class FileReader:
             return future
 
         # Calculate number of buffers needed
-        if total <= self.buffer_mgr.buffer_size:
+        if <size_t>total <= self.buffer_mgr.buffer_size:
             chunk_size = total
             nbufs = 1
         elif total > large_threshold:
