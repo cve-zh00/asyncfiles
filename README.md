@@ -46,7 +46,7 @@ pip3 install py-asyncfiles
 - Cython ~3.0
 - A C compiler (gcc, clang, or MSVC)
 - libuv and liburing (included as submodules)
-- POSIX only (Linux, macOS, BSD). Windows is not supported
+- Linux, macOS, BSD and Windows (Windows uses the libuv backend only; `io_uring` is Linux-only)
 
 
 ## 🔥 Quick Start

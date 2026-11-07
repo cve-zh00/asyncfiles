@@ -13,7 +13,7 @@ This document provides essential context for AI agents working in this repositor
 - **Language**: Python 3.10+ with Cython 3.0 extensions
 - **Architecture**: Cython-compiled C extensions with two interchangeable backends: `libuv` (default everywhere) and `io_uring` (Linux kernel >= 5.6, selected by `backend="auto"` when a runtime probe succeeds)
 - **Current Status**: Alpha/experimental - API may change. The version is managed by semantic-release (see `pyproject.toml`), not by hand
-- **Platform Support**: POSIX only (Linux, macOS, BSD) - **NO Windows support**
+- **Platform Support**: Linux, macOS, BSD and Windows (libuv backend only on Windows; libuv is built with CMake there)
 
 ---
 
@@ -382,15 +382,9 @@ Tests are configured to measure coverage with:
 
 ## Common Gotchas
 
-### 1. **Windows is NOT supported**
+### 1. **Windows uses a separate build path**
 
-The codebase explicitly raises `RuntimeError` on Windows in `setup.py`:
-```python
-if sys.platform in ("win32", "cygwin", "cli"):
-    raise RuntimeError("asyncfiles does not support Windows at the moment")
-```
-
-**Why**: The build system assumes POSIX APIs and relies on autoconf/libuv POSIX features.
+On Windows `setup.py` builds libuv with CMake (`build/libuv-<arch>/Release/libuv.lib`) and links the system libraries (`ws2_32`, `iphlpapi`, ...). libuv error codes are not errno there (e.g. `UV_ENOENT == -4058`), so `callbacks.pyx::_uv_oserror` translates them through `uv_err_name`. Never build `OSError(-err, ...)` directly from a libuv status. `io_uring` does not exist on Windows.
 
 ### 2. **Generated C files are NOT tracked in git**
 
@@ -650,7 +644,7 @@ Everything runs in one workflow because tags pushed with `GITHUB_TOKEN` do not t
 
 When working in this codebase:
 
-- [ ] Check platform (POSIX only, no Windows)
+- [ ] Check platform (Windows has a separate libuv/CMake build path and no io_uring)
 - [ ] Initialize libuv submodule if needed (`git submodule update --init`)
 - [ ] Build with `make compile` after changing `.pyx` files
 - [ ] Run `make test` before committing

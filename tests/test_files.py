@@ -587,3 +587,13 @@ async def test_open_does_not_leak_futures(temp_file):
             await afp.write(b"y")
 
     assert count() - before < 10
+
+
+async def test_unicode_path_roundtrip(tmp_path):
+    path = tmp_path / "ñandú_日本語.txt"
+
+    async with async_open(path, "w") as f:
+        await f.write("héllo")
+
+    async with async_open(path, "r") as f:
+        assert await f.read() == "héllo"
