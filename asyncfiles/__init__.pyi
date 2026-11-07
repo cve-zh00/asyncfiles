@@ -128,7 +128,7 @@ async def sendfile(
     offset: int = 0,
     count: Optional[int] = None,
     *,
-    chunk_size: int = 65536,
+    chunk_size: int = 1048576,
     loop: Optional[asyncio.AbstractEventLoop] = None,
     backend: BackendType = "auto",
 ) -> int: ...
@@ -140,7 +140,7 @@ async def sendpath(
     offset: int = 0,
     count: Optional[int] = None,
     *,
-    chunk_size: int = 65536,
+    chunk_size: int = 1048576,
     loop: Optional[asyncio.AbstractEventLoop] = None,
     backend: BackendType = "auto",
 ) -> int: ...
