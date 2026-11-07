@@ -160,6 +160,25 @@ async def process_files():
 asyncio.run(process_files())
 ```
 
+### Streaming Files over a Transport (`sendfile` & `sendpath`)
+
+`asyncfiles` provides `sendfile` and `sendpath` (plus `SendfileProtocol`) to stream binary files over an `asyncio.Transport` using `io_uring` or `libuv` chunked async reads with automatic write-buffer backpressure (`pause_writing` / `resume_writing`)—never `loop.run_in_executor`:
+
+```python
+import asyncio
+from asyncfiles import open, sendfile, sendpath
+
+async def send_static_file(transport: asyncio.Transport):
+    # Open, stream, and close a file by path in one call
+    sent = await sendpath(transport, "static/video.mp4", offset=0, count=None)
+
+    # Or stream from an already-open asyncfiles BinaryFile (or stdlib BinaryIO)
+    async with open("static/video.mp4", "rb") as af:
+        sent_slice = await sendfile(
+            transport, af, offset=1024, count=65536, chunk_size=65536
+        )
+```
+
 ## 🎯 Supported File Modes
 
 | Mode | Description |

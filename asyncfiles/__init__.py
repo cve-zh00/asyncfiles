@@ -1,10 +1,11 @@
 import asyncio
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import BinaryIO, Literal, Optional, Union
 
 from . import backend as _backend
 from .files import BinaryFile, TextFile
+from .sendfile import SendfileProtocol, sendfile_impl, validate_sendfile_args
 from .types import OpenTextMode
 from .utils import FileMode, mode_to_posix
 
@@ -12,7 +13,7 @@ from .utils import FileMode, mode_to_posix
 __version__ = "1.9.0"
 __author__ = "Bastián García"
 __email__ = "bastiang@uc.cl"
-__all__ = ["open", "__version__"]
+__all__ = ["open", "sendfile", "sendpath", "SendfileProtocol", "__version__"]
 
 
 def get_loop(
@@ -45,6 +46,50 @@ def open(
 
     # The file object is itself the async context manager (__aenter__/__aexit__)
     return FileClass(
-        path=path, mode=file_mode, buffer_size=buffer_size,
-        loop=loop, backend=resolved,
+        path=path,
+        mode=file_mode,
+        buffer_size=buffer_size,
+        loop=loop,
+        backend=resolved,
     )
+
+
+async def sendfile(
+    transport: asyncio.BaseTransport,
+    file: Union[BinaryFile, BinaryIO],
+    offset: int = 0,
+    count: Optional[int] = None,
+    *,
+    chunk_size: int = 64 * 1024,
+    loop: Optional[asyncio.AbstractEventLoop] = None,
+    backend: Literal["auto", "io_uring", "libuv"] = "auto",
+) -> int:
+    """Send a binary file over an asyncio transport using asyncfiles backends."""
+    loop = get_loop(loop)
+    resolved = _backend.resolve_backend(backend)
+    return await sendfile_impl(
+        transport, file, offset, count, chunk_size, loop, resolved
+    )
+
+
+async def sendpath(
+    transport: asyncio.BaseTransport,
+    path: Union[str, Path],
+    offset: int = 0,
+    count: Optional[int] = None,
+    *,
+    chunk_size: int = 64 * 1024,
+    loop: Optional[asyncio.AbstractEventLoop] = None,
+    backend: Literal["auto", "io_uring", "libuv"] = "auto",
+) -> int:
+    """Open, send, and close a file by path over an asyncio transport."""
+    validate_sendfile_args(transport, offset, count, chunk_size)
+    loop = get_loop(loop)
+    resolved = _backend.resolve_backend(backend)
+    async with open(
+        path, "rb", buffer_size=chunk_size, loop=loop, backend=resolved
+    ) as af:
+        return await sendfile_impl(
+            transport, af, offset, count, chunk_size, loop, resolved
+        )
+

@@ -425,6 +425,11 @@ setup(
             extra_compile_args=MODULES_CFLAGS,
         ),
         Extension(
+            "asyncfiles.sendfile",
+            sources=["asyncfiles/sendfile.pyx"],
+            extra_compile_args=MODULES_CFLAGS,
+        ),
+        Extension(
             "asyncfiles.backend",
             sources=["asyncfiles/backend.pyx"],
             extra_compile_args=MODULES_CFLAGS,

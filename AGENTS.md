@@ -163,11 +163,13 @@ asyncfiles/
 │   ├── base_file.pyx    # BaseFile class (core file abstraction)
 │   ├── binary_file.pyx  # BinaryFile subclass
 │   ├── text_file.pyx    # TextFile subclass
+│   ├── sendfile.pyx     # SendfileProtocol, sendfile, and sendpath implementation
 │   └── files.pyx        # Public exports
 │
 ├── tests/               # Test suite (pytest + unittest)
 │   ├── conftest.py      # Autouse `backend` fixture: every test runs once per available backend
-│   └── test_files.py    # Main test file
+│   ├── test_files.py    # Main test file
+│   └── test_sendfile.py # Tests for sendfile, sendpath, and SendfileProtocol
 │
 ├── benchmark/           # Performance benchmarks
 │   ├── benchmark_docker.py   # Harness run inside the container
