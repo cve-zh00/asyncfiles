@@ -60,7 +60,7 @@ async def sendfile(
     offset: int = 0,
     count: Optional[int] = None,
     *,
-    chunk_size: int = 64 * 1024,
+    chunk_size: int = 1024 * 1024,
     loop: Optional[asyncio.AbstractEventLoop] = None,
     backend: Literal["auto", "io_uring", "libuv"] = "auto",
 ) -> int:
@@ -78,7 +78,7 @@ async def sendpath(
     offset: int = 0,
     count: Optional[int] = None,
     *,
-    chunk_size: int = 64 * 1024,
+    chunk_size: int = 1024 * 1024,
     loop: Optional[asyncio.AbstractEventLoop] = None,
     backend: Literal["auto", "io_uring", "libuv"] = "auto",
 ) -> int:
