@@ -102,6 +102,7 @@ cdef extern from "uv.h" nogil:
     int uv_fs_ftruncate(uv_loop_t*, uv_fs_t* req,
                         int fd, int64_t offset, uv_fs_cb cb)
     void      uv_fs_req_cleanup(uv_fs_t* req)
+    const char* uv_err_name(int err)
     uv_buf_t  uv_buf_init(char* base, unsigned int len)
     int uv_guess_handle(int fd)
     int uv_idle_init(uv_loop_t*, uv_idle_t* idle)

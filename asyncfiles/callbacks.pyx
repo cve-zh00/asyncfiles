@@ -8,6 +8,19 @@ from cpython.object   cimport PyObject
 
 from .context cimport FSOpenContext, FSReadContext, FSWriteContext
 
+import errno as _errno
+
+
+cdef object _uv_oserror(int err, str msg):
+    """Build an OSError from a negative libuv status.
+
+    On POSIX libuv errors are -errno; on Windows they are distinct codes
+    (e.g. UV_ENOENT == -4058), so translate through the symbolic name.
+    """
+    cdef bytes name = uv.uv_err_name(err)
+    code = getattr(_errno, name.decode("ascii", "replace"), None)
+    return OSError(code if code is not None else -err, msg)
+
 
 cdef void cb_open(uv.uv_fs_t* req) noexcept with gil:
     cdef FSOpenContext* ctx = <FSOpenContext*>req.data
@@ -18,7 +31,7 @@ cdef void cb_open(uv.uv_fs_t* req) noexcept with gil:
     try:
         if err < 0:
             if not future.done():
-                future.set_exception(OSError(-err, "open failed"))
+                future.set_exception(_uv_oserror(<int>err, "open failed"))
         else:
             result_obj = req.result
             if not future.done():
@@ -39,7 +52,7 @@ cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil:
     try:
         if err < 0:
             if not future.done():
-                future.set_exception(OSError(-err, "stat failed"))
+                future.set_exception(_uv_oserror(<int>err, "stat failed"))
         else:
             if not future.done():
                 future.set_result(req.statbuf.st_size)
@@ -59,7 +72,7 @@ cdef void cb_close(uv.uv_fs_t* req) noexcept with gil:
     try:
         if err < 0:
             if not future.done():
-                future.set_exception(OSError(-err, "close failed"))
+                future.set_exception(_uv_oserror(<int>err, "close failed"))
         else:
             result_obj = req.result
             if not future.done():
@@ -81,7 +94,7 @@ cdef void cb_ftruncate(uv.uv_fs_t* req) noexcept with gil:
     try:
         if err < 0:
             if not future.done():
-                future.set_exception(OSError(-err, "ftruncate failed"))
+                future.set_exception(_uv_oserror(<int>err, "ftruncate failed"))
         else:
             if not future.done():
                 future.set_result(0)
@@ -99,7 +112,7 @@ cdef void cb_write(uv.uv_fs_t* req) noexcept with gil:
     try:
         if err < 0:
             if not future.done():
-                future.set_exception(OSError(<int>-err, "write failed"))
+                future.set_exception(_uv_oserror(<int>err, "write failed"))
         else:
             if not future.done():
                 future.set_result(err)
@@ -152,7 +165,7 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
     try:
         if result < 0:
             if not future.done():
-                future.set_exception(OSError(-result, "read failed"))
+                future.set_exception(_uv_oserror(<int>result, "read failed"))
             # Free ctx on error path since no _ReadResult will own it
             if ctx.buffer_mem != NULL:
                 free(ctx.buffer_mem)
