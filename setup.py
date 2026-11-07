@@ -12,13 +12,15 @@ from setuptools.command.build_ext import build_ext
 from setuptools.command.sdist import sdist
 
 # Platform check
-if sys.platform in ("win32", "cygwin", "cli"):
-    raise RuntimeError("asyncfiles does not support Windows at the moment")
+if sys.platform in ("cygwin", "cli"):
+    raise RuntimeError("asyncfiles does not support this platform")
+
+IS_WINDOWS = sys.platform == "win32"
 
 
 CYTHON_DEPENDENCY = "Cython~=3.0"
 MACHINE = platform.machine()
-MODULES_CFLAGS = [os.getenv("ASYNCFILES_OPT_CFLAGS", "-O3")]
+MODULES_CFLAGS = [os.getenv("ASYNCFILES_OPT_CFLAGS", "/O2" if IS_WINDOWS else "-O3")]
 _ROOT = pathlib.Path(__file__).parent
 LIBUV_DIR = str(_ROOT / "vendor" / "libuv")
 LIBUV_BUILD_DIR = str(_ROOT / "build" / "libuv-{}".format(MACHINE))
@@ -166,6 +168,10 @@ class asyncfiles_build_ext(build_ext):
 
     def build_libuv(self):
         """Build libuv from source"""
+        if IS_WINDOWS:
+            self._build_libuv_windows()
+            return
+
         env = _libuv_build_env()
 
         _libuv_autogen(env)
@@ -209,6 +215,28 @@ class asyncfiles_build_ext(build_ext):
             ["make", j_flag, c_flag], cwd=LIBUV_BUILD_DIR, env=env, check=True
         )
 
+    def _build_libuv_windows(self):
+        """Build the static libuv with CMake (MSVC)."""
+        if os.path.exists(LIBUV_BUILD_DIR):
+            shutil.rmtree(LIBUV_BUILD_DIR)
+        subprocess.run(
+            [
+                "cmake",
+                "-S", LIBUV_DIR,
+                "-B", LIBUV_BUILD_DIR,
+                "-DLIBUV_BUILD_SHARED=OFF",
+                "-DLIBUV_BUILD_TESTS=OFF",
+                "-DLIBUV_BUILD_BENCH=OFF",
+                "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+                "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL",
+            ],
+            check=True,
+        )
+        subprocess.run(
+            ["cmake", "--build", LIBUV_BUILD_DIR, "--config", "Release"],
+            check=True,
+        )
+
     def build_liburing(self):
         """Build liburing from source (Linux only)."""
         if os.path.exists(LIBURING_BUILD_DIR):
@@ -247,7 +275,10 @@ class asyncfiles_build_ext(build_ext):
                 # Support macports on Mac OS X.
                 self.compiler.add_include_dir("/opt/local/include")
         else:
-            libuv_lib = os.path.join(LIBUV_BUILD_DIR, ".libs", "libuv.a")
+            if IS_WINDOWS:
+                libuv_lib = os.path.join(LIBUV_BUILD_DIR, "Release", "libuv.lib")
+            else:
+                libuv_lib = os.path.join(LIBUV_BUILD_DIR, ".libs", "libuv.a")
             if not os.path.exists(libuv_lib):
                 self.build_libuv()
             if not os.path.exists(libuv_lib):
@@ -267,7 +298,14 @@ class asyncfiles_build_ext(build_ext):
         elif sys.platform.startswith("sunos"):
             self.compiler.add_library("kstat")
 
-        self.compiler.add_library("pthread")
+        if IS_WINDOWS:
+            for lib in (
+                "ws2_32", "iphlpapi", "userenv", "psapi", "dbghelp",
+                "ole32", "shell32", "user32", "advapi32",
+            ):
+                self.compiler.add_library(lib)
+        else:
+            self.compiler.add_library("pthread")
 
         # Build and link liburing on Linux
         if sys.platform.startswith("linux"):
@@ -321,7 +359,7 @@ setup(
     author_email="bastiang@uc.cl",
     url="https://github.com/cve-zh00/asyncfiles",
     license="MIT",
-    platforms=["POSIX"],
+    platforms=["POSIX", "Windows"],
     python_requires=">=3.10",
     packages=["asyncfiles"],
     cmdclass={"sdist": asyncfiles_sdist, "build_ext": asyncfiles_build_ext},
