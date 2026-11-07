@@ -7,6 +7,7 @@ from . cimport uv
 from .callbacks cimport cb_read, cb_write, _ReadResult
 from .context cimport FSReadContext, FSWriteContext
 from .cpython cimport PyObject
+from .event_loop cimport EventLoopPump
 from .utils cimport new_future
 from .io_operations cimport IOOperation
 from .buffer_manager cimport BufferManager
@@ -96,15 +97,19 @@ cdef class FileReader:
         self.binary = binary
 
     @cython.cdivision(True)
-    async def read(self, Py_ssize_t length=-1):
+    async def read(self, Py_ssize_t length=-1, EventLoopPump pump=None):
         """Read with post-callback processing"""
         cdef:
+            object read_future
             object future_result
             _ReadResult wrapper
             bytes result
 
         # Start async read
-        future_result = await self._read_internal(length)
+        read_future = self._read_internal(length)
+        if pump is not None:
+            pump.prime()
+        future_result = await read_future
 
         # Check if it's already bytes (early return case)
         if isinstance(future_result, bytes):

@@ -45,8 +45,8 @@ cdef class BaseFile:
             self.uv_loop = NULL
         else:
             # Default libuv path — unchanged behavior
-            self.uv_loop = uv.uv_default_loop()
-            self.pump = _get_or_create_pump(loop, self.uv_loop)
+            self.pump = _get_or_create_pump(loop, NULL)
+            self.uv_loop = self.pump.uv_loop
             self.io_op = IOOperation.create(loop, self.uv_loop, self.fd, self.path_cstr)
             self.uring_pump = None
             self.io_op_uring = None

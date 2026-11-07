@@ -351,9 +351,8 @@ async def _sendfile_borrowed_fd(
         uring_pump = get_or_create_uring_pump(loop)
         io_op_uring = create_io_uring_operation(loop, uring_pump, fd, "")
     else:
-        uv_loop = uv.uv_default_loop()
-        pump = _get_or_create_pump(loop, uv_loop)
-        pump.prime()
+        pump = _get_or_create_pump(loop, NULL)
+        uv_loop = pump.uv_loop
         io_op = IOOperation.create(loop, uv_loop, fd, "")
 
     proto = SendfileProtocol(transport, loop)
@@ -369,7 +368,7 @@ async def _sendfile_borrowed_fd(
                 uv_reader = FileReader(
                     io_op, buffer_mgr, offset + sent, file_size, True
                 )
-                chunk = await uv_reader.read(n)
+                chunk = await uv_reader.read(n, pump)
 
             if not chunk:
                 break

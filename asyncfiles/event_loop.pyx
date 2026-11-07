@@ -40,6 +40,8 @@ cdef EventLoopPump _get_or_create_pump(object asyncio_loop, uv.uv_loop_t* uv_loo
         pump.acquire()
         return pump
 
+    if uv_loop == NULL:
+        uv_loop = uv.uv_default_loop()
     pump = EventLoopPump.create(uv_loop, asyncio_loop)
     pump.acquire()
     pump.start()
