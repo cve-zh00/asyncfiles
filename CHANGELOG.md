@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.10.1 (2026-11-07)
+
+### Performance Improvements
+
+- Raise sendfile/sendpath default chunk_size from 64 KiB to 1 MiB
+  ([`4cb560b`](https://github.com/cve-zh00/asyncfiles/commit/4cb560b59d64d449cbeb10714564b8bbbf1687d0))
+
+
 ## v1.10.0 (2026-11-07)
 
 ### Bug Fixes
