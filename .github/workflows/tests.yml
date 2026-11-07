@@ -72,9 +72,39 @@ jobs:
         run: |
           make distclean && make debug && make test
 
+  test-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 50
+          submodules: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Install Python deps
+        run: pip install --upgrade pip setuptools wheel "Cython~=3.0" pytest pytest-asyncio
+
+      - name: Build
+        run: python setup.py build_ext --inplace --cython-always
+
+      - name: Test
+        run: python -m pytest tests/ -v
+
   regression-tests:
     name: "Regression Tests"
-    needs: [test]
+    needs: [test, test-windows]
     runs-on: ubuntu-latest
     steps:
       - run: echo OK
