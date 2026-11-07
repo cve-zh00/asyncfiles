@@ -2,6 +2,35 @@
 
 <!-- version list -->
 
+## v1.9.0 (2026-11-07)
+
+### Bug Fixes
+
+- Map libuv error codes to errno so Windows raises FileNotFoundError/FileExistsError
+  ([`bd7d8b4`](https://github.com/cve-zh00/asyncfiles/commit/bd7d8b43179b22de84cd8e44b42bc3c64b389ad0))
+
+### Build System
+
+- Add Windows build path for libuv via CMake
+  ([`c3a4cef`](https://github.com/cve-zh00/asyncfiles/commit/c3a4cef144d57f14956addfaa474953401049925))
+
+- Read text files as UTF-8 in setup.py
+  ([`165cbb2`](https://github.com/cve-zh00/asyncfiles/commit/165cbb24fa414c4986c35c5b05707d57f321b106))
+
+### Continuous Integration
+
+- Add experimental Windows job
+  ([`6a80228`](https://github.com/cve-zh00/asyncfiles/commit/6a802284fe645d76a76a655c93c99eb6cac714f0))
+
+- Run Windows tests in tests.yml so PRs and releases cover them
+  ([`31a1907`](https://github.com/cve-zh00/asyncfiles/commit/31a190749e65aa2b0b2991da93324d5263b2952d))
+
+### Features
+
+- Support Windows (wheels, CI matrix, docs)
+  ([`e04b7e9`](https://github.com/cve-zh00/asyncfiles/commit/e04b7e965e8911632849dc9c5ceb7a8f6dc05d6f))
+
+
 ## v1.8.1 (2026-11-07)
 
 ### Bug Fixes
