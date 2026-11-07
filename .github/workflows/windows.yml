@@ -1,0 +1,32 @@
+name: Windows (experimental)
+
+on:
+  push:
+    branches:
+      - feat/windows
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install --upgrade pip setuptools wheel "Cython~=3.0" pytest pytest-asyncio
+
+      - name: Build
+        run: python setup.py build_ext --inplace --cython-always
+
+      - name: Test
+        run: python -m pytest tests/ -v
