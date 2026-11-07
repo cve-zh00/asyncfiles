@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v1.8.1 (2026-11-07)
+
+### Bug Fixes
+
+- Resolve sign-compare and const-qualifier compiler warnings
+  ([`a222e3e`](https://github.com/cve-zh00/asyncfiles/commit/a222e3edebb19d73178f8c9eb1e1c96b27fdea49))
+
+### Continuous Integration
+
+- Add Python 3.14 and 3.15 to tests, wheels and classifiers
+  ([`f372db1`](https://github.com/cve-zh00/asyncfiles/commit/f372db1f1c3c2d39028ea66be6f758acb3f595a7))
+
+- Update tox envlist for Python 3.10-3.15
+  ([`eb1fad4`](https://github.com/cve-zh00/asyncfiles/commit/eb1fad45516afe8c3b3921bd45640fb17a69255f))
+
+### Documentation
+
+- Update AGENTS.md for Python 3.10-3.15
+  ([`71bfca6`](https://github.com/cve-zh00/asyncfiles/commit/71bfca6deb3364c050dd11edfb1f3045324d8d58))
+
+
 ## v1.8.0 (2026-11-06)
 
 ### Continuous Integration
