@@ -41,7 +41,7 @@ def _libuv_build_env():
     return env
 
 
-with open("asyncfiles/__init__.py") as f:
+with open("asyncfiles/__init__.py", encoding="utf-8") as f:
     for line in f:
         if line.startswith("__version__ ="):
             _, _, version = line.partition("=")
@@ -353,7 +353,7 @@ setup(
     name="py-asyncfiles",
     version=VERSION,
     description="High-performance async file I/O library with io_uring and libuv backends",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="bastian garcia",
     author_email="bastiang@uc.cl",
