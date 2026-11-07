@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.10.0 (2026-11-07)
+
+### Bug Fixes
+
+- Prime shared libuv loop after submitting borrowed-fd read
+  ([`312655d`](https://github.com/cve-zh00/asyncfiles/commit/312655d0db42efefbf220769a8d88d4243ccaa81))
+
+### Features
+
+- Add sendfile and sendpath protocol support
+  ([`82eface`](https://github.com/cve-zh00/asyncfiles/commit/82efaceb4a86c6caa5b7664ec94fd0308b15f8bb))
+
+
 ## v1.9.0 (2026-11-07)
 
 ### Bug Fixes
