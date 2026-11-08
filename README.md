@@ -299,14 +299,14 @@ Special thanks to:
 
 ## 📊 Status
 
-**Current Status**: Experimental / In Development
+**Current Status**: Production / Stable
 
-This project is currently in active development. The API may change. Production use is not recommended yet.
+Ready for production use across Linux (`io_uring` and `libuv`), macOS, BSD, and Windows (`libuv`).
 
 ### Roadmap
 - [x] Iteration support
-- [X] Comprehensive test suite
-- [] Complete documentation
+- [x] Comprehensive test suite
+- [x] Complete documentation
 - [x] Binary mode support
 - [x] Seek/tell operations
 - [x] File metadata operations

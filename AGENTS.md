@@ -12,7 +12,7 @@ This document provides essential context for AI agents working in this repositor
 
 - **Language**: Python 3.10+ with Cython 3.0 extensions
 - **Architecture**: Cython-compiled C extensions with two interchangeable backends: `libuv` (default everywhere) and `io_uring` (Linux kernel >= 5.6, selected by `backend="auto"` when a runtime probe succeeds)
-- **Current Status**: Alpha/experimental - API may change. The version is managed by semantic-release (see `pyproject.toml`), not by hand
+- **Current Status**: Production/Stable. The version is managed by semantic-release (see `pyproject.toml`), not by hand
 - **Platform Support**: Linux, macOS, BSD and Windows (libuv backend only on Windows; libuv is built with CMake there)
 
 ---
