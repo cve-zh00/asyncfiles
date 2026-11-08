@@ -113,21 +113,20 @@ cdef class EventLoopPump:
         pump._ref_count = 0
         return pump
 
-    cdef inline int run_nowait(self) noexcept nogil:
-        return uv.uv_run(self.uv_loop, uv.UV_RUN_NOWAIT)
-
-    cdef inline void prime(self) noexcept:
-        """Run one libuv iteration after the first request is submitted.
-
-        libuv registers its internal async handle (the threadpool completion
-        signal) with the backend fd lazily, inside the first uv_run() that
-        sees an active request. On Linux the epoll fd stays silent until that
-        happens, so add_reader() would never fire and the first operation
-        would hang forever.
-        """
+    cdef void _prime_slow(self) noexcept:
+        """Ensure the libuv loop is primed (Unix) or polling is active (fallback)."""
         if not self._primed:
             self._primed = True
-            self.run_nowait()
+            if (
+                self.run_nowait() != 0
+                and self._backend_fd < 0
+                and self._tick_handle is None
+                and self._running
+            ):
+                self._tick_handle = self._asyncio_loop.call_soon(self._tick)
+        elif self._backend_fd < 0 and self._tick_handle is None and self._running:
+            if self.run_nowait() != 0 and self._running:
+                self._tick_handle = self._asyncio_loop.call_soon(self._tick)
 
     cdef acquire(self):
         self._ref_count += 1
@@ -145,11 +144,12 @@ cdef class EventLoopPump:
         if self._backend_fd >= 0:
             try:
                 self._asyncio_loop.add_reader(self._backend_fd, self._on_event)
+                return
             except (ValueError, OSError, NotImplementedError):
                 # Fallback to call_soon polling if add_reader fails
                 self._backend_fd = -1
-                self._tick_handle = self._asyncio_loop.call_soon(self._tick)
-        else:
+
+        if self.run_nowait() != 0 and self._running:
             self._tick_handle = self._asyncio_loop.call_soon(self._tick)
 
     def _on_event(self):
@@ -163,8 +163,7 @@ cdef class EventLoopPump:
         self._tick_handle = None
         if not self._running:
             return
-        self.run_nowait()
-        if self._running:
+        if self.run_nowait() != 0 and self._running:
             self._tick_handle = self._asyncio_loop.call_soon(self._tick)
 
     cdef _stop(self):

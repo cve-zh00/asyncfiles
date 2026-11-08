@@ -781,3 +781,114 @@ async def test_readline_readlines_writelines(temp_file):
         assert await f.readline() == b""
         f.seek(0)
         assert await f.readlines() == lines_bin
+
+
+async def test_concurrent_reads_and_writes_same_file_handle(tmp_path):
+    bin_path = str(tmp_path / "concurrent.bin")
+    blocks = [bytes([65 + i]) * 1024 for i in range(8)]
+    Path(bin_path).write_bytes(b"".join(blocks))
+
+    async with async_open(bin_path, "rb") as f:
+        results = await asyncio.gather(*(f.read(1024) for _ in range(8)))
+        assert results == blocks
+        assert f.tell() == 8 * 1024
+
+    write_bin_path = str(tmp_path / "concurrent_write.bin")
+    async with async_open(write_bin_path, "wb") as f:
+        counts = await asyncio.gather(*(f.write(block) for block in blocks))
+        assert counts == [1024] * 8
+        assert f.tell() == 8 * 1024
+    assert len(Path(write_bin_path).read_bytes()) == 8 * 1024
+
+    txt_path = str(tmp_path / "concurrent.txt")
+    txt_lines = [f"line-{i:02d}\n" for i in range(8)]
+    async with async_open(txt_path, "w") as f:
+        await asyncio.gather(*(f.write(line) for line in txt_lines))
+    async with async_open(txt_path, "r") as f:
+        read_lines = await asyncio.gather(*(f.readline() for _ in range(8)))
+        assert sorted(read_lines) == txt_lines
+
+
+async def test_fallback_polling_stops_when_idle(temp_file):
+    Path(temp_file).write_bytes(b"hello fallback")
+    loop = asyncio.get_running_loop()
+    orig_add_reader = loop.add_reader
+    orig_call_soon = loop.call_soon
+    tick_calls = 0
+
+    def no_add_reader(*args, **kwargs):
+        raise NotImplementedError
+
+    def counting_call_soon(callback, *args, **kwargs):
+        nonlocal tick_calls
+        if getattr(callback, "__name__", "") == "_tick":
+            tick_calls += 1
+        return orig_call_soon(callback, *args, **kwargs)
+
+    loop.add_reader = no_add_reader
+    loop.call_soon = counting_call_soon
+    try:
+        async with async_open(temp_file, "r+b", backend="libuv") as f:
+            before_idle = tick_calls
+            await asyncio.sleep(0.03)
+            assert tick_calls - before_idle == 0
+            assert await f.read() == b"hello fallback"
+            assert await f.truncate(5) == 5
+    finally:
+        loop.add_reader = orig_add_reader
+        loop.call_soon = orig_call_soon
+
+
+async def test_truncate_returns_new_size_and_defaults_to_offset(temp_file):
+    async with async_open(temp_file, "w+") as f:
+        await f.write("Hello World!")
+        f.seek(8)
+        assert await f.truncate(5) == 5
+        # Stream position is preserved by truncate() per io.IOBase
+        assert f.tell() == 8
+
+    assert Path(temp_file).read_text(encoding="utf-8") == "Hello"
+
+    async with async_open(temp_file, "w+") as f:
+        await f.write("Hello World!")
+        f.seek(5)
+        assert await f.truncate() == 5
+        assert f.tell() == 5
+
+    assert Path(temp_file).read_text(encoding="utf-8") == "Hello"
+
+    async with async_open(temp_file, "r+") as f:
+        with pytest.raises(ValueError, match="negative size"):
+            await f.truncate(-1)
+
+    async with async_open(temp_file, "r") as f:
+        with pytest.raises(OSError):
+            await f.truncate(0)
+
+
+async def test_seek_negative_position_raises(temp_file):
+    Path(temp_file).write_bytes(b"0123456789")
+    async with async_open(temp_file, "rb") as f:
+        f.seek(4)
+        with pytest.raises((OSError, ValueError)):
+            f.seek(-5, 0)
+        assert f.tell() == 4
+
+        with pytest.raises((OSError, ValueError)):
+            f.seek(-10, 1)
+        assert f.tell() == 4
+
+        with pytest.raises((OSError, ValueError)):
+            f.seek(-20, 2)
+        assert f.tell() == 4
+
+
+async def test_binary_write_rejects_non_buffer_objects(temp_file):
+    async with async_open(temp_file, "wb") as f:
+        with pytest.raises(TypeError):
+            await f.write(5)
+        with pytest.raises(TypeError):
+            await f.write("not bytes")
+        with pytest.raises(TypeError):
+            await f.write([1, 2, 3])
+

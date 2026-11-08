@@ -14,8 +14,12 @@ cdef class EventLoopPump:
 
     @staticmethod
     cdef EventLoopPump create(uv.uv_loop_t* uv_loop, object asyncio_loop)
-    cdef inline int run_nowait(self) noexcept nogil
-    cdef inline void prime(self) noexcept
+    cdef inline int run_nowait(self) noexcept nogil:
+        return uv.uv_run(self.uv_loop, uv.UV_RUN_NOWAIT)
+    cdef inline void prime(self) noexcept:
+        if not self._primed or self._backend_fd < 0:
+            self._prime_slow()
+    cdef void _prime_slow(self) noexcept
     cdef start(self)
     cdef acquire(self)
     cdef bint release(self)
