@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.10.3 (2026-11-08)
+
+### Bug Fixes
+
+- **typing**: Narrow open() overloads to TextFile and BinaryFile
+  ([`bd0d358`](https://github.com/cve-zh00/asyncfiles/commit/bd0d358512c5e1113400214cd6a70d89f4cc011e))
+
+
 ## v1.10.2 (2026-11-08)
 
 ### Bug Fixes
