@@ -1,13 +1,7 @@
 from __future__ import annotations
 
-import sys
 from os import PathLike
-from typing import Union
-
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias, Literal
-else:
-    from typing_extensions import TypeAlias, Literal
+from typing import Literal, TypeAlias, Union
 
 StrOrBytesPath: TypeAlias = Union[str, bytes, "PathLike[str]", "PathLike[bytes]"]
 FileDescriptorOrPath: TypeAlias = Union[int, StrOrBytesPath, "PathLike[str]"]

@@ -97,7 +97,7 @@ isort asyncfiles/ tests/
 black --check asyncfiles/ tests/
 isort --check-only asyncfiles/ tests/
 
-# Type checking (mypy configured but errors ignored for asyncfiles module)
+# Type checking
 mypy asyncfiles/ tests/ --ignore-missing-imports
 
 # Linting
@@ -442,16 +442,9 @@ Commits use [Conventional Commits](https://www.conventionalcommits.org/):
 
 `.github/workflows/release.yml` runs `python-semantic-release` on pushes to `main`. Never edit versions or `CHANGELOG.md` by hand.
 
-### 8. **Type checking ignores asyncfiles module**
+### 8. **Type hints via `__init__.pyi` and `types.py`**
 
-`pyproject.toml` has:
-```toml
-[[tool.mypy.overrides]]
-module = "asyncfiles.*"
-ignore_errors = true
-```
-
-**Reason**: Cython-generated code confuses mypy. Type hints are provided via `__init__.pyi` stub files instead.
+Cython extension modules do not expose Python ASTs to `mypy`, so public type signatures live in `asyncfiles/__init__.pyi` and `asyncfiles/types.py` (with `asyncfiles/py.typed` for PEP 561).
 
 ### 9. **No runtime dependencies**
 

@@ -136,10 +136,6 @@ warn_no_return = true
 follow_imports = "normal"
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = "asyncfiles.*"
-ignore_errors = true
-
 [tool.coverage.run]
 source = ["asyncfiles"]
 omit = [
