@@ -11,6 +11,7 @@ from .buffer_manager cimport BufferManager
 from .file_io cimport FileReader, FileWriter
 from cpython.unicode cimport PyUnicode_AsUTF8
 from libc.stdint cimport int64_t
+import os
 
 
 def _consume_future_result(fut):
@@ -30,6 +31,8 @@ cdef class BaseFile:
         self.fd = -1
         self.size = -1
         self.backend = backend
+        self._pump_acquired = False
+        self._closed = False
 
         self.offset = -1 if mode.appending else 0
 
@@ -39,6 +42,7 @@ cdef class BaseFile:
             from .io_uring_operations import create_io_uring_operation
 
             self.uring_pump = get_or_create_uring_pump(loop)
+            self._pump_acquired = True
             self.io_op_uring = create_io_uring_operation(loop, self.uring_pump, self.fd, self.path)
             self.pump = None
             self.io_op = None
@@ -46,6 +50,7 @@ cdef class BaseFile:
         else:
             # Default libuv path — unchanged behavior
             self.pump = _get_or_create_pump(loop, NULL)
+            self._pump_acquired = True
             self.uv_loop = self.pump.uv_loop
             self.io_op = IOOperation.create(loop, self.uv_loop, self.fd, self.path_cstr)
             self.uring_pump = None
@@ -53,49 +58,111 @@ cdef class BaseFile:
 
         self.buffer_mgr = BufferManager(buffer_size)
 
-    async def __aenter__(self):
+    cdef void _release_pump(self):
+        if not self._pump_acquired:
+            return
+        self._pump_acquired = False
         if self.backend == "io_uring":
-            if self.file_mode.readable:
-                # open + statx are linked and submitted together (1 syscall)
-                open_future, stat_future = self.io_op_uring.py_open_and_stat(self.flags)
-                try:
-                    self.fd = await open_future
-                except BaseException:
-                    if stat_future.done() and not stat_future.cancelled():
-                        stat_future.exception()  # mark retrieved (-ECANCELED)
-                    else:
-                        stat_future.add_done_callback(_consume_future_result)
-                    raise
-                self.io_op_uring.fd = self.fd
-                self.size = await stat_future
-            else:
-                self.fd = await self.io_op_uring.py_open_file(self.flags)
-                self.io_op_uring.fd = self.fd
+            from .io_uring_pump import release_uring_pump
+            release_uring_pump(self.loop)
+            self.uring_pump = None
         else:
-            open_future = self.io_op.open_file(self.flags)
-            self.pump.prime()
-            self.fd = await open_future
-            self.io_op.fd = self.fd
-            if self.file_mode.readable:
-                self.size = await self.io_op.get_stat()
+            release_shared_pump(self.loop)
+            self.pump = None
+
+    def __dealloc__(self):
+        if self._pump_acquired and self.loop is not None:
+            try:
+                self._release_pump()
+            except Exception:
+                pass
+
+    @property
+    def closed(self):
+        return self._closed
+
+    @property
+    def name(self):
+        return self.path
+
+    def fileno(self):
+        if self._closed or self.fd < 0:
+            raise ValueError("I/O operation on closed file")
+        return self.fd
+
+    async def flush(self):
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
+        return None
+
+    async def close(self):
+        await self.__aexit__(None, None, None)
+
+    async def __aenter__(self):
+        cdef int fd_to_close
+        try:
+            if self.backend == "io_uring":
+                if self.file_mode.readable:
+                    # open + statx are linked and submitted together (1 syscall)
+                    open_future, stat_future = self.io_op_uring.py_open_and_stat(self.flags)
+                    try:
+                        self.fd = await open_future
+                    except BaseException:
+                        if stat_future.done() and not stat_future.cancelled():
+                            stat_future.exception()  # mark retrieved (-ECANCELED)
+                        else:
+                            stat_future.add_done_callback(_consume_future_result)
+                        raise
+                    self.io_op_uring.fd = self.fd
+                    self.size = await stat_future
+                else:
+                    self.fd = await self.io_op_uring.py_open_file(self.flags)
+                    self.io_op_uring.fd = self.fd
+            else:
+                open_future = self.io_op.open_file(self.flags)
+                self.pump.prime()
+                self.fd = await open_future
+                self.io_op.fd = self.fd
+                if self.file_mode.readable:
+                    self.size = await self.io_op.get_stat()
+
+            if self.file_mode.appending and self.size >= 0:
+                self.offset = self.size
+        except BaseException:
+            if self.fd >= 0:
+                fd_to_close = self.fd
+                self.fd = -1
+                if self.backend == "io_uring":
+                    self.io_op_uring.fd = -1
+                else:
+                    self.io_op.fd = -1
+                try:
+                    os.close(fd_to_close)
+                except OSError:
+                    pass
+            self._closed = True
+            self._release_pump()
+            raise
 
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self._closed = True
         try:
             if self.fd >= 0:
                 if self.backend == "io_uring":
                     await self.io_op_uring.py_close_file()
+                    self.io_op_uring.fd = -1
                 else:
                     await self.io_op.close_file()
+                    self.io_op.fd = -1
+                self.fd = -1
         finally:
-            if self.backend == "io_uring":
-                from .io_uring_pump import release_uring_pump
-                release_uring_pump(self.loop)
-            else:
-                release_shared_pump(self.loop)
+            self._release_pump()
 
     async def truncate(self, int64_t length=0):
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
         if self.backend == "io_uring":
             await self.io_op_uring.py_truncate_file(length)
         else:
@@ -107,6 +174,8 @@ cdef class BaseFile:
         return 0
 
     cpdef seek(self, int64_t offset, int whence=0):
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
         if whence == 0:
             self.offset = offset
         elif whence == 1:
@@ -123,9 +192,13 @@ cdef class BaseFile:
         return self.offset
 
     cpdef tell(self):
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
         return self.offset
 
     cdef object _read_internal(self, Py_ssize_t length=-1):
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
         cdef FileReader uv_reader
 
         if self.backend == "io_uring":
@@ -149,20 +222,23 @@ cdef class BaseFile:
             return uv_reader.read(length)
 
     cdef object _write_internal(self, object bdata):
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
         cdef FileWriter uv_writer
+        cdef int64_t write_offset = -1 if self.file_mode.appending else self.offset
 
         if self.backend == "io_uring":
             from .io_uring_file_io import IOUringFileWriter
             writer = IOUringFileWriter(
                 self.io_op_uring,
                 self.buffer_mgr,
-                self.offset
+                write_offset
             )
             return writer.write(bdata)
         else:
             uv_writer = FileWriter(
                 self.io_op,
                 self.buffer_mgr,
-                self.offset
+                write_offset
             )
             return uv_writer.write(bdata)

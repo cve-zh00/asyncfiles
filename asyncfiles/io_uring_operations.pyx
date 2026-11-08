@@ -123,7 +123,7 @@ cdef class IOUringOperation:
         io_uring_prep_openat(sqe_open, -100, self.path_cstr, flags, 0o644)
         sqe_open.flags |= 4  # IOSQE_IO_LINK
         sqe_open.user_data = ud_open
-        io_uring_prep_statx(sqe_stat, -100, self.path_cstr, 0, 0x01, stx)
+        io_uring_prep_statx(sqe_stat, -100, self.path_cstr, 0, 0x201, stx)
         sqe_stat.user_data = ud_stat
 
         idle = not self.pump._pending_futures and not self.pump._submit_scheduled
@@ -212,7 +212,7 @@ cdef class IOUringOperation:
             future.set_exception(OSError(11, "SQ ring full"))
             return future
 
-        io_uring_prep_statx(sqe, self.fd, b"", 0x1000, 0x01, stx)  # AT_EMPTY_PATH, STATX_SIZE
+        io_uring_prep_statx(sqe, self.fd, b"", 0x1000, 0x201, stx)  # AT_EMPTY_PATH, STATX_TYPE | STATX_SIZE
         sqe.user_data = ud
 
         # Store (future, stx_ptr) — use PyLong_FromVoidPtr for safe pointer storage

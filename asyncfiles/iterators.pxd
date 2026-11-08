@@ -4,6 +4,6 @@ cdef class BaseFileIterator:
     cdef:
         object file
         object buffer
-        int chunk_size
+        Py_ssize_t chunk_size
         bint exhausted
         bint is_binary

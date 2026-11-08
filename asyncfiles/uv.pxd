@@ -43,6 +43,7 @@ cdef extern from "uv.h" nogil:
         void*      data
 
     ctypedef struct uv_stat_t:
+        uint64_t st_mode
         int64_t st_size
 
     ctypedef struct uv_buf_t:

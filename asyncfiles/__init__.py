@@ -1,5 +1,6 @@
 import asyncio
 from functools import lru_cache
+import os
 from pathlib import Path
 from typing import BinaryIO, Literal, Optional, Union
 
@@ -38,9 +39,9 @@ def open(
     loop = get_loop(loop)
     resolved = _backend.resolve_backend(backend)
 
-    # Convert Path to str if necessary
-    if isinstance(path, Path):
-        path = str(path)
+    # Convert PathLike / bytes to str if necessary
+    if not isinstance(path, str):
+        path = os.fsdecode(path)
     file_mode = parse_mode(mode)
     FileClass = BinaryFile if file_mode.binary else TextFile
 
@@ -92,4 +93,3 @@ async def sendpath(
         return await sendfile_impl(
             transport, af, offset, count, chunk_size, loop, resolved
         )
-

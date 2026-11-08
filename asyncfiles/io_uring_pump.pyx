@@ -241,6 +241,10 @@ cdef class IOUringPump:
                     free(stx_ptr)
                     if not future.cancelled():
                         future.set_exception(OSError(-res, "io_uring operation failed"))
+                elif ((<statx*>stx_ptr).stx_mode & 0o170000) == 0o040000:
+                    free(stx_ptr)
+                    if not future.cancelled():
+                        future.set_exception(OSError(21, "Is a directory"))
                 else:
                     # Resolve with file size from statx buffer
                     if not future.cancelled():

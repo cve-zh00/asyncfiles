@@ -29,6 +29,7 @@ cdef extern from "liburing.h" nogil:
 cdef extern from "<linux/stat.h>" nogil:
     # statx struct for IORING_OP_STATX
     struct statx:
+        uint16_t stx_mode
         uint64_t stx_size
 
 cdef extern from "liburing.h" nogil:

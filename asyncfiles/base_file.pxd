@@ -9,13 +9,13 @@ from libc.stdint cimport int64_t
 
 cdef class BaseFile:
     cdef:
-        str path
+        readonly str path
         const char* path_cstr
         int fd, flags
         int64_t size, offset
         object loop
         uv.uv_loop_t* uv_loop
-        size_t buffer_size
+        readonly size_t buffer_size
         FileMode file_mode
         EventLoopPump pump
         IOOperation io_op
@@ -23,7 +23,10 @@ cdef class BaseFile:
         str backend
         object uring_pump
         object io_op_uring
+        bint _pump_acquired
+        bint _closed
 
+    cdef void _release_pump(self)
     cpdef seek(self, int64_t offset, int whence=*)
     cpdef tell(self)
     cdef object _read_internal(self, Py_ssize_t length=*)

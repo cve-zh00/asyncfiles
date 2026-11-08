@@ -1,12 +1,21 @@
 """Type stubs for asyncfiles package."""
 
 import asyncio
+import os
 from pathlib import Path
-from typing import AsyncIterator, BinaryIO, Literal, Optional, Union, overload
+from typing import (
+    AsyncIterator,
+    BinaryIO,
+    Iterable,
+    Literal,
+    Optional,
+    Union,
+    overload,
+)
 
 from contextlib import AbstractAsyncContextManager
 
-PathLike = Union[str, Path]
+PathLike = Union[str, bytes, Path, os.PathLike[str], os.PathLike[bytes]]
 
 OpenTextMode = Literal[
     "r",
@@ -46,6 +55,8 @@ class File:
     path: str
     mode: int
     buffer_size: int
+    name: str
+    closed: bool
 
     def __init__(
         self,
@@ -61,10 +72,19 @@ class File:
         exc_val: Optional[BaseException],
         exc_tb: Optional[object],
     ) -> None: ...
-    async def read(self, size: int = -1) -> Union[str, bytes]: ...
-    async def write(self, data: Union[str, bytes]) -> int: ...
+    async def read(self, size: Optional[int] = -1) -> Union[str, bytes]: ...
+    async def readline(self, size: Optional[int] = -1) -> Union[str, bytes]: ...
+    async def readlines(
+        self, hint: Optional[int] = -1
+    ) -> Union[list[str], list[bytes]]: ...
+    async def write(self, data: Union[str, bytes, bytearray, memoryview]) -> int: ...
+    async def writelines(
+        self, lines: Iterable[Union[str, bytes, bytearray, memoryview]]
+    ) -> None: ...
+    async def flush(self) -> None: ...
     async def close(self) -> None: ...
     async def truncate(self, length: int = 0) -> int: ...
+    def fileno(self) -> int: ...
     def seek(self, offset: int, whence: int = 0) -> int: ...
     def tell(self) -> int: ...
     def __aiter__(self) -> AsyncIterator[Union[str, bytes]]: ...

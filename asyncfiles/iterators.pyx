@@ -5,7 +5,7 @@
 
 
 cdef class BaseFileIterator:
-    def __init__(self, object file, int chunk_size, bint is_binary):
+    def __init__(self, object file, Py_ssize_t chunk_size, bint is_binary):
         self.file = file
         self.buffer = b"" if is_binary else ""
         self.chunk_size = chunk_size
@@ -16,7 +16,7 @@ cdef class BaseFileIterator:
         return self
 
     async def __anext__(self):
-        cdef int newline_pos
+        cdef Py_ssize_t newline_pos
         cdef object line, chunk, newline_char
 
         newline_char = b'\n' if self.is_binary else '\n'

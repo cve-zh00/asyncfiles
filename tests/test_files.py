@@ -597,3 +597,187 @@ async def test_unicode_path_roundtrip(tmp_path):
 
     async with async_open(path, "r") as f:
         assert await f.read() == "héllo"
+
+
+async def test_open_error_does_not_leak_pump_or_fd(tmp_path):
+    import gc
+    from asyncfiles.event_loop import EventLoopPump
+
+    with pytest.raises(FileNotFoundError):
+        async with async_open(tmp_path / "does_not_exist.bin", "rb"):
+            pass
+
+    gc.collect()
+    assert not any(isinstance(o, EventLoopPump) for o in gc.get_objects())
+
+    existing = tmp_path / "exists.bin"
+    existing.write_bytes(b"123")
+    with pytest.raises(FileExistsError):
+        async with async_open(existing, "xb"):
+            pass
+
+    gc.collect()
+    assert not any(isinstance(o, EventLoopPump) for o in gc.get_objects())
+
+
+async def test_open_directory_raises_is_a_directory(tmp_path):
+    import gc
+    from asyncfiles.event_loop import EventLoopPump
+
+    for mode in ("r", "rb", "w", "wb"):
+        with pytest.raises(IsADirectoryError):
+            async with async_open(tmp_path, mode):
+                pass
+
+    gc.collect()
+    assert not any(isinstance(o, EventLoopPump) for o in gc.get_objects())
+
+
+async def test_plus_modes_write_seek_read_same_handle(tmp_path):
+    # w+b: write, seek(0), read within the same handle
+    p_wb = tmp_path / "wplus.bin"
+    async with async_open(p_wb, "w+b") as f:
+        assert await f.write(b"hello world") == 11
+        assert f.tell() == 11
+        f.seek(0)
+        assert await f.read() == b"hello world"
+        f.seek(6)
+        await f.write(b"asyncfiles")
+        f.seek(0)
+        assert await f.read() == b"hello asyncfiles"
+
+    # w+ text: write, seek(0), read within the same handle
+    p_wt = tmp_path / "wplus.txt"
+    async with async_open(p_wt, "w+") as f:
+        await f.write("hola mundo")
+        f.seek(0)
+        assert await f.read() == "hola mundo"
+
+    # a+b: initial offset at EOF, seek(0) reads from start, write still appends at EOF
+    p_ab = tmp_path / "aplus.bin"
+    p_ab.write_bytes(b"first-")
+    async with async_open(p_ab, "a+b") as f:
+        assert f.tell() == 6
+        f.seek(0)
+        assert await f.read() == b"first-"
+        f.seek(0)
+        await f.write(b"second")
+        assert f.tell() == 12
+        f.seek(0)
+        assert await f.read() == b"first-second"
+
+    # x+b: exclusive create + write + seek + read
+    p_xb = tmp_path / "xplus.bin"
+    async with async_open(p_xb, "x+b") as f:
+        await f.write(b"exclusive")
+        f.seek(0)
+        assert await f.read() == b"exclusive"
+
+
+async def test_read_none_and_large_length_clamp(temp_file):
+    async with async_open(temp_file, "wb") as f:
+        await f.write(b"short data")
+
+    async with async_open(temp_file, "rb") as f:
+        assert await f.read(0) == b""
+        assert await f.read(10_000_000) == b"short data"
+        assert await f.read(65536) == b""
+        f.seek(0)
+        assert await f.read(None) == b"short data"
+
+    async with async_open(temp_file, "r") as f:
+        assert await f.read(0) == ""
+        assert await f.read(10_000_000) == "short data"
+        assert await f.read(65536) == ""
+        f.seek(0)
+        assert await f.read(None) == "short data"
+
+
+async def test_utf8_multibyte_cut_after_first_byte(temp_file):
+    # "한" is 3 bytes (\xed\x95\x9c), followed by "a" (1 byte)
+    async with async_open(temp_file, "w") as f:
+        await f.write("한a🏁b")
+
+    async with async_open(temp_file, "r") as f:
+        assert await f.read(1) == "한"
+        assert await f.read(1) == "a"
+        assert await f.read(1) == "🏁"
+        assert await f.read(1) == "b"
+        assert await f.read(1) == ""
+
+
+async def test_binary_write_bytearray_and_memoryview(temp_file):
+    async with async_open(temp_file, "wb") as f:
+        assert await f.write(bytearray(b"hello ")) == 6
+        mv = memoryview(b"world!")[0:5]
+        assert await f.write(mv) == 5
+
+    async with async_open(temp_file, "rb") as f:
+        assert await f.read() == b"hello world"
+
+
+async def test_pathlike_and_bytes_paths(tmp_path):
+    class CustomPath(os.PathLike):
+        def __init__(self, p):
+            self._p = str(p)
+
+        def __fspath__(self):
+            return self._p
+
+    target = tmp_path / "custom_path.bin"
+    async with async_open(CustomPath(target), "wb") as f:
+        await f.write(b"from-pathlike")
+
+    async with async_open(os.fsencode(target), "rb") as f:
+        assert await f.read() == b"from-pathlike"
+
+
+async def test_close_flush_closed_name_fileno(temp_file):
+    async with async_open(temp_file, "w+b") as f:
+        assert f.name == temp_file
+        assert f.path == temp_file
+        assert f.buffer_size == 65536
+        assert not f.closed
+        assert f.fileno() >= 0
+        await f.write(b"abc")
+        await f.flush()
+        await f.close()
+        assert f.closed
+        with pytest.raises(ValueError, match="closed file"):
+            await f.read()
+        with pytest.raises(ValueError, match="closed file"):
+            await f.write(b"x")
+        with pytest.raises(ValueError, match="closed file"):
+            f.seek(0)
+        with pytest.raises(ValueError, match="closed file"):
+            f.tell()
+        with pytest.raises(ValueError, match="closed file"):
+            f.fileno()
+
+
+async def test_readline_readlines_writelines(temp_file):
+    lines_txt = ["first line\n", "second line 🚀\n", "third line"]
+    async with async_open(temp_file, "w") as f:
+        await f.writelines(lines_txt)
+
+    async with async_open(temp_file, "r") as f:
+        assert await f.readline() == "first line\n"
+        assert await f.readline(6) == "second"
+        assert await f.readline() == " line 🚀\n"
+        assert await f.readline() == "third line"
+        assert await f.readline() == ""
+        f.seek(0)
+        assert await f.readlines() == lines_txt
+
+    lines_bin = [b"alpha\n", b"beta\n", b"gamma"]
+    async with async_open(temp_file, "wb") as f:
+        await f.writelines(lines_bin)
+
+    async with async_open(temp_file, "rb") as f:
+        assert await f.readline() == b"alpha\n"
+        assert await f.readline(2) == b"be"
+        assert await f.readline() == b"ta\n"
+        assert await f.readline() == b"gamma"
+        assert await f.readline() == b""
+        f.seek(0)
+        assert await f.readlines() == lines_bin

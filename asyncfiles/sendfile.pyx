@@ -251,6 +251,7 @@ async def _sendfile_base_file(
     file_size = af_regular_file_size(file.fd)
     if file_size < 0:
         raise asyncio.SendfileNotAvailableError("not a regular file")
+    file.size = file_size
 
     available = max(<int64_t>0, file_size - offset)
     if count is not None:

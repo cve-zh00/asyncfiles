@@ -53,6 +53,9 @@ cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil:
         if err < 0:
             if not future.done():
                 future.set_exception(_uv_oserror(<int>err, "stat failed"))
+        elif (req.statbuf.st_mode & 0o170000) == 0o040000:
+            if not future.done():
+                future.set_exception(_uv_oserror(-_errno.EISDIR, "Is a directory"))
         else:
             if not future.done():
                 future.set_result(req.statbuf.st_size)
@@ -158,7 +161,7 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
     """Minimal callback - just capture result and schedule processing"""
     cdef:
         FSReadContext* ctx = <FSReadContext*>req.data
-        int result = req.result
+        Py_ssize_t result = req.result
         object future = <object>ctx.future
         _ReadResult wrapper
 
