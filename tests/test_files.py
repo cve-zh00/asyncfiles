@@ -1,12 +1,17 @@
 import asyncio
+import errno
+import io
 import json
 import os
+import sys
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
 from asyncfiles import open as async_open
+from asyncfiles.backend import resolve_backend
+from asyncfiles.utils import mode_to_posix
 
 
 def split_by(seq, n):
@@ -122,7 +127,7 @@ async def test_truncate(temp_file):
 
     # Open in write mode to truncate
     async with async_open(temp_file, "r+") as afp:
-        await afp.truncate(0)
+        assert await afp.truncate(0) == 0
 
     async with async_open(temp_file, "r") as afp:
         result = await afp.read()
@@ -337,7 +342,7 @@ async def test_seek_and_tell(temp_file):
         assert f.tell() == 5
 
         # Seek to beginning
-        f.seek(0)
+        assert f.seek(0) == 0
         assert f.tell() == 0
 
         # Read again from beginning
@@ -346,12 +351,19 @@ async def test_seek_and_tell(temp_file):
         assert f.tell() == 3
 
         # Seek from current position
-        f.seek(2, 1)  # SEEK_CUR
+        assert f.seek(2, 1) == 5  # SEEK_CUR
         assert f.tell() == 5
 
         # Seek from end
-        f.seek(-3, 2)  # SEEK_END
+        assert f.seek(-3, 2) == 7  # SEEK_END
         assert f.tell() == 7
+
+        with pytest.raises(ValueError, match="Invalid whence"):
+            f.seek(0, 99)
+
+    async with async_open(temp_file, "w") as wf:
+        with pytest.raises(OSError, match="Cannot seek from end"):
+            wf.seek(0, 2)
 
 
 async def test_truncate_with_size(temp_file):
@@ -360,7 +372,7 @@ async def test_truncate_with_size(temp_file):
         await f.write("Hello World!")
 
     async with async_open(temp_file, "r+") as f:
-        await f.truncate(5)
+        assert await f.truncate(5) == 5
 
     async with async_open(temp_file, "r") as f:
         result = await f.read()
@@ -370,9 +382,9 @@ async def test_truncate_with_size(temp_file):
 async def test_write_plus_mode(temp_file):
     async with async_open(temp_file, "w+") as f:
         await f.write("Test data")
-        result = await f.read()
-        # After write, we're at the end, so read returns empty or remaining
-        assert result == "" or result == "Test data"
+        assert await f.read() == ""
+        assert f.seek(0) == 0
+        assert await f.read() == "Test data"
 
 
 async def test_empty_file_operations(temp_file):
@@ -743,10 +755,23 @@ async def test_close_flush_closed_name_fileno(temp_file):
         await f.flush()
         await f.close()
         assert f.closed
+        # Idempotent second close
+        await f.close()
+        assert f.closed
         with pytest.raises(ValueError, match="closed file"):
             await f.read()
         with pytest.raises(ValueError, match="closed file"):
+            await f.readline()
+        with pytest.raises(ValueError, match="closed file"):
+            await f.readlines()
+        with pytest.raises(ValueError, match="closed file"):
             await f.write(b"x")
+        with pytest.raises(ValueError, match="closed file"):
+            await f.writelines([b"x"])
+        with pytest.raises(ValueError, match="closed file"):
+            await f.truncate(0)
+        with pytest.raises(ValueError, match="closed file"):
+            await f.flush()
         with pytest.raises(ValueError, match="closed file"):
             f.seek(0)
         with pytest.raises(ValueError, match="closed file"):
@@ -761,11 +786,16 @@ async def test_readline_readlines_writelines(temp_file):
         await f.writelines(lines_txt)
 
     async with async_open(temp_file, "r") as f:
+        assert await f.readline(0) == ""
+        assert f.tell() == 0
         assert await f.readline() == "first line\n"
         assert await f.readline(6) == "second"
         assert await f.readline() == " line 🚀\n"
         assert await f.readline() == "third line"
         assert await f.readline() == ""
+        f.seek(0)
+        assert await f.readlines(5) == ["first line\n"]
+        assert await f.readlines() == lines_txt[1:]
         f.seek(0)
         assert await f.readlines() == lines_txt
 
@@ -774,13 +804,27 @@ async def test_readline_readlines_writelines(temp_file):
         await f.writelines(lines_bin)
 
     async with async_open(temp_file, "rb") as f:
+        assert await f.readline(0) == b""
+        assert f.tell() == 0
         assert await f.readline() == b"alpha\n"
         assert await f.readline(2) == b"be"
         assert await f.readline() == b"ta\n"
         assert await f.readline() == b"gamma"
         assert await f.readline() == b""
         f.seek(0)
+        assert await f.readlines(3) == [b"alpha\n"]
+        assert await f.readlines() == lines_bin[1:]
+        f.seek(0)
         assert await f.readlines() == lines_bin
+
+    # Multibyte UTF-8 partial readline boundary
+    async with async_open(temp_file, "w") as f:
+        await f.write("한글🏁!\nnext\n")
+    async with async_open(temp_file, "r") as f:
+        assert await f.readline(2) == "한글"
+        assert f.tell() == len("한글".encode("utf-8"))
+        assert await f.readline() == "🏁!\n"
+        assert await f.readline() == "next\n"
 
 
 async def test_concurrent_reads_and_writes_same_file_handle(tmp_path):
@@ -798,15 +842,32 @@ async def test_concurrent_reads_and_writes_same_file_handle(tmp_path):
         counts = await asyncio.gather(*(f.write(block) for block in blocks))
         assert counts == [1024] * 8
         assert f.tell() == 8 * 1024
-    assert len(Path(write_bin_path).read_bytes()) == 8 * 1024
+    written_bytes = Path(write_bin_path).read_bytes()
+    assert len(written_bytes) == 8 * 1024
+    assert sorted(split_by(written_bytes, 1024)) == blocks
+
+    append_bin_path = str(tmp_path / "concurrent_append.bin")
+    async with async_open(append_bin_path, "ab") as f:
+        counts = await asyncio.gather(*(f.write(block) for block in blocks))
+        assert counts == [1024] * 8
+    appended_bytes = Path(append_bin_path).read_bytes()
+    assert len(appended_bytes) == 8 * 1024
+    assert sorted(split_by(appended_bytes, 1024)) == blocks
 
     txt_path = str(tmp_path / "concurrent.txt")
     txt_lines = [f"line-{i:02d}\n" for i in range(8)]
     async with async_open(txt_path, "w") as f:
-        await asyncio.gather(*(f.write(line) for line in txt_lines))
+        txt_counts = await asyncio.gather(*(f.write(line) for line in txt_lines))
+        assert txt_counts == [8] * 8
+        assert f.tell() == 64
     async with async_open(txt_path, "r") as f:
+        read_chunks = await asyncio.gather(*(f.read(8) for _ in range(8)))
+        assert sorted(read_chunks) == txt_lines
+        assert f.tell() == 64
+        f.seek(0)
         read_lines = await asyncio.gather(*(f.readline() for _ in range(8)))
         assert sorted(read_lines) == txt_lines
+        assert f.tell() == 64
 
 
 async def test_fallback_polling_stops_when_idle(temp_file):
@@ -846,6 +907,10 @@ async def test_truncate_returns_new_size_and_defaults_to_offset(temp_file):
         assert await f.truncate(5) == 5
         # Stream position is preserved by truncate() per io.IOBase
         assert f.tell() == 8
+        # Cached file size is updated on the open handle
+        assert f.seek(0, 2) == 5
+        f.seek(0)
+        assert await f.read() == "Hello"
 
     assert Path(temp_file).read_text(encoding="utf-8") == "Hello"
 
@@ -857,12 +922,19 @@ async def test_truncate_returns_new_size_and_defaults_to_offset(temp_file):
 
     assert Path(temp_file).read_text(encoding="utf-8") == "Hello"
 
+    # Extending a file via truncate(larger_size) updates in-memory size for read()
+    async with async_open(temp_file, "w+b") as f:
+        await f.write(b"abc")
+        assert await f.truncate(6) == 6
+        f.seek(0)
+        assert await f.read() == b"abc\x00\x00\x00"
+
     async with async_open(temp_file, "r+") as f:
         with pytest.raises(ValueError, match="negative size"):
             await f.truncate(-1)
 
     async with async_open(temp_file, "r") as f:
-        with pytest.raises(OSError):
+        with pytest.raises(io.UnsupportedOperation):
             await f.truncate(0)
 
 
@@ -870,25 +942,61 @@ async def test_seek_negative_position_raises(temp_file):
     Path(temp_file).write_bytes(b"0123456789")
     async with async_open(temp_file, "rb") as f:
         f.seek(4)
-        with pytest.raises((OSError, ValueError)):
-            f.seek(-5, 0)
-        assert f.tell() == 4
-
-        with pytest.raises((OSError, ValueError)):
-            f.seek(-10, 1)
-        assert f.tell() == 4
-
-        with pytest.raises((OSError, ValueError)):
-            f.seek(-20, 2)
-        assert f.tell() == 4
+        for delta, whence in ((-5, 0), (-10, 1), (-20, 2)):
+            with pytest.raises((OSError, ValueError)) as exc_info:
+                f.seek(delta, whence)
+            assert isinstance(exc_info.value, OSError)
+            assert isinstance(exc_info.value, ValueError)
+            assert exc_info.value.errno == errno.EINVAL
+            assert f.tell() == 4
 
 
 async def test_binary_write_rejects_non_buffer_objects(temp_file):
     async with async_open(temp_file, "wb") as f:
-        with pytest.raises(TypeError):
-            await f.write(5)
-        with pytest.raises(TypeError):
-            await f.write("not bytes")
-        with pytest.raises(TypeError):
-            await f.write([1, 2, 3])
+        for invalid in (5, "not bytes", [1, 2, 3], {"a": 1}, None):
+            with pytest.raises(TypeError):
+                await f.write(invalid)
+
+
+async def test_mode_validation_and_unsupported_operations(temp_file):
+    for bad_mode in ("", "+", "b", "t", "rw", "ra", "wx", "r++", "rz", "w?"):
+        with pytest.raises(ValueError):
+            mode_to_posix(bad_mode.encode("ascii"))
+        with pytest.raises(ValueError):
+            async_open(temp_file, bad_mode)  # type: ignore[arg-type]
+
+    Path(temp_file).write_bytes(b"readonly content")
+    for ro_mode, payload in (("r", "x"), ("rb", b"x")):
+        async with async_open(temp_file, ro_mode) as f:
+            with pytest.raises(io.UnsupportedOperation):
+                await f.write(payload)
+            with pytest.raises(io.UnsupportedOperation):
+                await f.writelines([payload])
+            with pytest.raises(io.UnsupportedOperation):
+                await f.truncate(0)
+
+    for wo_mode in ("w", "wb", "a", "ab"):
+        async with async_open(temp_file, wo_mode) as f:
+            with pytest.raises(io.UnsupportedOperation):
+                await f.read()
+            with pytest.raises(io.UnsupportedOperation):
+                await f.readline()
+            with pytest.raises(io.UnsupportedOperation):
+                await f.readlines()
+
+
+async def test_backend_resolution_and_validation(temp_file):
+    assert resolve_backend("libuv") == "libuv"
+    assert resolve_backend("auto") in ("libuv", "io_uring")
+
+    with pytest.raises(ValueError, match="Invalid backend"):
+        resolve_backend("invalid")
+    with pytest.raises(ValueError, match="Invalid backend"):
+        async_open(temp_file, "r", backend="invalid")  # type: ignore[arg-type]
+
+    if sys.platform != "linux":
+        with pytest.raises(OSError, match="io_uring backend is unavailable"):
+            resolve_backend("io_uring")
+        with pytest.raises(OSError, match="io_uring backend is unavailable"):
+            async_open(temp_file, "r", backend="io_uring")
 

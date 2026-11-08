@@ -1,4 +1,5 @@
 import asyncio
+import io
 import os
 import socket
 from pathlib import Path
@@ -298,6 +299,8 @@ async def test_sendfile_protocol_buffered_forwarding():
     assert bytes(inner.buf[:5]) == b"hello"
     assert proxy.eof_received() is False
     assert inner.eof is True
+    with pytest.raises(RuntimeError, match="Invalid state: connection_made"):
+        proxy.connection_made(transport)
     await proxy.restore()
     assert transport.get_protocol() is inner
 
@@ -313,15 +316,22 @@ async def test_sendfile_validation_errors(tmp_path):
     empty_path.write_bytes(b"")
     assert await sendpath(transport, empty_path) == 0
 
-    # Zero / negative / non-int count
+    # Offset past EOF on stdlib file returns 0 and updates lseek
+    with open(file_path, "rb") as std_eof:
+        assert await sendfile(transport, std_eof, offset=100) == 0
+        assert os.lseek(std_eof.fileno(), 0, os.SEEK_CUR) == 100
+
+    # Zero / negative / non-int / bool count
     with pytest.raises(ValueError, match="count must be a positive integer"):
         await sendpath(transport, file_path, count=0)
     with pytest.raises(ValueError, match="count must be a positive integer"):
         await sendpath(transport, file_path, count=-1)
     with pytest.raises(TypeError, match="count must be a positive integer"):
         await sendpath(transport, file_path, count="10")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="count must be a positive integer"):
+        await sendpath(transport, file_path, count=True)  # type: ignore[arg-type]
 
-    # Negative / non-int offset
+    # Negative / non-int / bool offset
     with pytest.raises(
         ValueError, match="offset must be a non-negative integer"
     ):
@@ -330,6 +340,10 @@ async def test_sendfile_validation_errors(tmp_path):
         TypeError, match="offset must be a non-negative integer"
     ):
         await sendpath(transport, file_path, offset="0")  # type: ignore[arg-type]
+    with pytest.raises(
+        TypeError, match="offset must be a non-negative integer"
+    ):
+        await sendpath(transport, file_path, offset=False)  # type: ignore[arg-type]
 
     # Invalid chunk_size
     with pytest.raises(
@@ -357,6 +371,10 @@ async def test_sendfile_validation_errors(tmp_path):
     with pytest.raises(ValueError, match="closed file"):
         await sendfile(transport, closed_std)
 
+    # In-memory BytesIO (no fileno) raises SendfileNotAvailableError
+    with pytest.raises(asyncio.SendfileNotAvailableError):
+        await sendfile(transport, io.BytesIO(b"abc"))
+
     # Non-regular file (pipe or socket) raises SendfileNotAvailableError
     sock_a, sock_b = socket.socketpair()
     try:
@@ -368,7 +386,9 @@ async def test_sendfile_validation_errors(tmp_path):
         sock_b.close()
 
     # Transport without protocol rejected
-    no_proto_transport = _FakeBackpressureTransport(loop, None)  # type: ignore[arg-type]
+    no_proto_transport = _FakeBackpressureTransport(
+        loop, None  # type: ignore[arg-type]
+    )
     with pytest.raises(RuntimeError, match="Transport has no protocol"):
         await sendpath(no_proto_transport, file_path)
 

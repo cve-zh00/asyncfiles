@@ -23,29 +23,24 @@ def _available_backends():
 def backend(request, monkeypatch):
     """Run every test once per available backend.
 
-    ``asyncfiles.open`` resolves the backend at call time, so forcing the
-    resolver exercises each implementation without touching the tests.
+    ``asyncfiles.open`` resolves ``backend="auto"`` at call time, so forcing
+    the default resolution exercises each implementation while still allowing
+    tests to pass an explicit ``backend=...`` value.
     """
     import asyncfiles.backend as backend_module
 
+    real_resolve_backend = backend_module.resolve_backend
+
     monkeypatch.setattr(
-        backend_module, "resolve_backend", lambda _requested: request.param
+        backend_module,
+        "resolve_backend",
+        lambda requested: (
+            request.param
+            if requested == "auto"
+            else real_resolve_backend(requested)
+        ),
     )
     return request.param
-
-
-@pytest.fixture(scope="session")
-def event_loop_policy():
-    """Set the event loop policy for the test session."""
-    return asyncio.DefaultEventLoopPolicy()
-
-
-@pytest.fixture
-def event_loop(event_loop_policy):
-    """Create an event loop for each test."""
-    loop = event_loop_policy.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture
