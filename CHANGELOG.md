@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v1.10.2 (2026-11-08)
+
+### Bug Fixes
+
+- Cancel pending _tick handle when stopping EventLoopPump on Windows
+  ([`d5f1160`](https://github.com/cve-zh00/asyncfiles/commit/d5f11601dc1b83e2006968dcedfedec5f1513052))
+
+- Harden aiofiles drop-in compatibility and edge cases
+  ([`102ae1e`](https://github.com/cve-zh00/asyncfiles/commit/102ae1e9525c7356274a4a32874974e5a6d4cf44))
+
+
 ## v1.10.1 (2026-11-07)
 
 ### Performance Improvements
