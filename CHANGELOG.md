@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.10.4 (2026-11-08)
+
+### Bug Fixes
+
+- Reserve file offsets lock-free, stop idle fallback polling, and align IOBase semantics
+  ([`0592740`](https://github.com/cve-zh00/asyncfiles/commit/0592740ab635968b086cb4ad3ee4b32ce81d6acf))
+
+### Testing
+
+- Fix backend fixture override on Linux and strengthen test suite
+  ([`57bef65`](https://github.com/cve-zh00/asyncfiles/commit/57bef65e8ed02f9a1cfda57e74239cb2c6e92262))
+
+
 ## v1.10.3 (2026-11-08)
 
 ### Bug Fixes
