@@ -6,6 +6,7 @@ cdef class EventLoopPump:
     cdef:
         uv.uv_loop_t* uv_loop
         object _asyncio_loop
+        object _tick_handle
         int _backend_fd
         bint _running
         bint _primed

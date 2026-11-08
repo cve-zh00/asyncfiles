@@ -96,6 +96,7 @@ cdef class EventLoopPump:
     def __cinit__(self):
         self.uv_loop = NULL
         self._asyncio_loop = None
+        self._tick_handle = None
         self._backend_fd = -1
         self._running = False
         self._primed = False
@@ -106,6 +107,7 @@ cdef class EventLoopPump:
         cdef EventLoopPump pump = EventLoopPump.__new__(EventLoopPump)
         pump.uv_loop = uv_loop
         pump._asyncio_loop = asyncio_loop
+        pump._tick_handle = None
         pump._backend_fd = uv.uv_backend_fd(uv_loop)
         pump._running = False
         pump._ref_count = 0
@@ -145,9 +147,10 @@ cdef class EventLoopPump:
                 self._asyncio_loop.add_reader(self._backend_fd, self._on_event)
             except (ValueError, OSError, NotImplementedError):
                 # Fallback to call_soon polling if add_reader fails
-                self._asyncio_loop.call_soon(self._tick)
+                self._backend_fd = -1
+                self._tick_handle = self._asyncio_loop.call_soon(self._tick)
         else:
-            self._asyncio_loop.call_soon(self._tick)
+            self._tick_handle = self._asyncio_loop.call_soon(self._tick)
 
     def _on_event(self):
         """Called by asyncio when libuv's backend fd is readable (completions ready)."""
@@ -157,11 +160,12 @@ cdef class EventLoopPump:
 
     def _tick(self):
         """Fallback polling for when add_reader is not available."""
+        self._tick_handle = None
         if not self._running:
             return
         self.run_nowait()
         if self._running:
-            self._asyncio_loop.call_soon(self._tick)
+            self._tick_handle = self._asyncio_loop.call_soon(self._tick)
 
     cdef _stop(self):
         """Stop the pump."""
@@ -169,10 +173,14 @@ cdef class EventLoopPump:
             return
         self._running = False
 
+        if self._tick_handle is not None:
+            self._tick_handle.cancel()
+            self._tick_handle = None
+
         if self._backend_fd >= 0:
             try:
                 self._asyncio_loop.remove_reader(self._backend_fd)
-            except (ValueError, OSError):
+            except (ValueError, OSError, NotImplementedError):
                 pass
 
     async def stop(self):
