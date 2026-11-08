@@ -90,6 +90,34 @@ class File:
     def __aiter__(self) -> AsyncIterator[Union[str, bytes]]: ...
 
 
+class TextFile(File):
+    """Async text file handle for UTF-8 I/O operations."""
+
+    async def __aenter__(self) -> TextFile: ...
+    async def read(self, size: Optional[int] = -1) -> str: ...
+    async def readline(self, size: Optional[int] = -1) -> str: ...
+    async def readlines(self, hint: Optional[int] = -1) -> list[str]: ...
+    async def write(self, data: str) -> int: ...
+    async def writelines(self, lines: Iterable[str]) -> None: ...
+    def __aiter__(self) -> AsyncIterator[str]: ...
+
+
+class BinaryFile(File):
+    """Async binary file handle for bytes I/O operations."""
+
+    async def __aenter__(self) -> BinaryFile: ...
+    async def read(self, size: Optional[int] = -1) -> bytes: ...
+    async def readline(self, size: Optional[int] = -1) -> bytes: ...
+    async def readlines(self, hint: Optional[int] = -1) -> list[bytes]: ...
+    async def write(
+        self, data: Union[bytes, bytearray, memoryview]
+    ) -> int: ...
+    async def writelines(
+        self, lines: Iterable[Union[bytes, bytearray, memoryview]]
+    ) -> None: ...
+    def __aiter__(self) -> AsyncIterator[bytes]: ...
+
+
 @overload
 def open(
     path: PathLike,
@@ -98,7 +126,7 @@ def open(
     loop: Optional[asyncio.AbstractEventLoop] = None,
     *,
     backend: BackendType = "auto",
-) -> AbstractAsyncContextManager[File]: ...
+) -> AbstractAsyncContextManager[TextFile]: ...
 @overload
 def open(
     path: PathLike,
@@ -107,10 +135,19 @@ def open(
     loop: Optional[asyncio.AbstractEventLoop] = None,
     *,
     backend: BackendType = "auto",
+) -> AbstractAsyncContextManager[BinaryFile]: ...
+@overload
+def open(
+    path: PathLike,
+    mode: str = ...,
+    buffer_size: int = 65536,
+    loop: Optional[asyncio.AbstractEventLoop] = None,
+    *,
+    backend: BackendType = "auto",
 ) -> AbstractAsyncContextManager[File]: ...
 def open(
     path: PathLike,
-    mode: OpenMode = "r",
+    mode: str = "r",
     buffer_size: int = 65536,
     loop: Optional[asyncio.AbstractEventLoop] = None,
     *,
