@@ -2,6 +2,32 @@
 
 <!-- version list -->
 
+## v1.11.0 (2026-11-11)
+
+### Chores
+
+- Remove mypy ignore_errors override and Python <3.10 check
+  ([`8473ec5`](https://github.com/cve-zh00/asyncfiles/commit/8473ec5152322f096d637f7294ff142f0307ad79))
+
+### Continuous Integration
+
+- Bump pypa/cibuildwheel
+  ([`e94e132`](https://github.com/cve-zh00/asyncfiles/commit/e94e1325031d02bc718b094d81453b61bb81fc96))
+
+### Documentation
+
+- Add SECURITY.md policy
+  ([`c782cef`](https://github.com/cve-zh00/asyncfiles/commit/c782ceffec0086bf0e61ed65d04a3a32cc2aa43c))
+
+- Update project status to Production/Stable
+  ([`ca644b9`](https://github.com/cve-zh00/asyncfiles/commit/ca644b96d1b3902d392068f028be879e3685e1ba))
+
+### Features
+
+- Add zero-copy BinaryFile.readinto, buffer write, and asyncfiles.os
+  ([`e9fa2ef`](https://github.com/cve-zh00/asyncfiles/commit/e9fa2ef26bcecbce425bd984a510c719806f306e))
+
+
 ## v1.10.4 (2026-11-08)
 
 ### Bug Fixes
