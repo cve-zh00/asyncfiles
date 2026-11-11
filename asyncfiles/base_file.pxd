@@ -1,7 +1,7 @@
 # cython: language_level=3
 
 from . cimport uv
-from .utils cimport FileMode
+from .utils cimport FileMode, _PinnedBuffer
 from .event_loop cimport EventLoopPump
 from .io_operations cimport IOOperation
 from .buffer_manager cimport BufferManager
@@ -34,4 +34,5 @@ cdef class BaseFile:
     cpdef seek(self, int64_t offset, int whence=*)
     cpdef tell(self)
     cdef object _read_internal(self, Py_ssize_t length=*, int64_t read_offset=*)
+    cdef object _readinto_internal(self, _PinnedBuffer pinned, Py_ssize_t length, int64_t read_offset=*)
     cdef object _write_internal(self, object bdata, int64_t write_offset=*)

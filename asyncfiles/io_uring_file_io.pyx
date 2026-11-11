@@ -5,6 +5,7 @@
 
 from .io_uring_operations cimport IOUringOperation
 from .buffer_manager cimport BufferManager
+from .utils cimport _PinnedBuffer
 from cpython.bytes cimport PyBytes_FromStringAndSize, PyBytes_AS_STRING, PyBytes_GET_SIZE
 from cpython.ref cimport Py_INCREF, Py_DECREF
 from cpython.unicode cimport PyUnicode_Check, PyUnicode_AsUTF8AndSize
@@ -34,19 +35,19 @@ cdef class IOUringFileReader:
         self.size = size
         self.binary = binary
 
-    async def _read_chunk(self, bytes py_buf, Py_ssize_t start, Py_ssize_t n,
-                          int64_t file_off):
-        """Read n bytes into py_buf[start:], retrying short reads until EOF."""
+    async def _read_chunk(self, object keep_obj, Py_ssize_t base_addr,
+                          Py_ssize_t start, Py_ssize_t n, int64_t file_off):
+        """Read n bytes into base_addr[start:], retrying short reads until EOF."""
         cdef:
-            char* base = PyBytes_AS_STRING(py_buf)
+            char* base = <char*><size_t>base_addr
             Py_ssize_t done = 0
             int got
 
         while done < n:
-            # py_buf is pinned by the pump until the CQE, even on cancellation
+            # keep_obj is pinned by the pump until the CQE, even on cancellation
             got = await self.io_op.read(
                 base + start + done, <unsigned int>(n - done),
-                file_off + done, py_buf
+                file_off + done, keep_obj
             )
             if got <= 0:
                 break
@@ -60,6 +61,7 @@ cdef class IOUringFileReader:
             Py_ssize_t got
             Py_ssize_t pos
             Py_ssize_t n
+            Py_ssize_t base_addr
             bytes py_buf
             list tasks
 
@@ -71,14 +73,15 @@ cdef class IOUringFileReader:
         if py_buf is None:
             raise MemoryError()
 
+        base_addr = <Py_ssize_t><size_t>PyBytes_AS_STRING(py_buf)
         if total < PARALLEL_THRESHOLD:
-            got = await self._read_chunk(py_buf, 0, total, self.offset)
+            got = await self._read_chunk(py_buf, base_addr, 0, total, self.offset)
         else:
             tasks = []
             pos = 0
             while pos < total:
                 n = min(CHUNK_SIZE, total - pos)
-                tasks.append(self._read_chunk(py_buf, pos, n, self.offset + pos))
+                tasks.append(self._read_chunk(py_buf, base_addr, pos, n, self.offset + pos))
                 pos += n
             counts = await asyncio.gather(*tasks)
             got = 0
@@ -92,6 +95,37 @@ cdef class IOUringFileReader:
         if got == total:
             return py_buf
         return py_buf[:got]
+
+    async def readinto(self, _PinnedBuffer pinned, Py_ssize_t total):
+        """Zero-copy read directly into a pinned writable buffer."""
+        cdef:
+            Py_ssize_t got
+            Py_ssize_t pos
+            Py_ssize_t n
+            Py_ssize_t base_addr
+            list tasks
+
+        if total <= 0:
+            return 0
+
+        base_addr = <Py_ssize_t><size_t>pinned.view.buf
+        if total < PARALLEL_THRESHOLD:
+            got = await self._read_chunk(pinned, base_addr, 0, total, self.offset)
+        else:
+            tasks = []
+            pos = 0
+            while pos < total:
+                n = min(CHUNK_SIZE, total - pos)
+                tasks.append(self._read_chunk(pinned, base_addr, pos, n, self.offset + pos))
+                pos += n
+            counts = await asyncio.gather(*tasks)
+            got = 0
+            for c in counts:
+                got += c
+                if c < CHUNK_SIZE:
+                    break
+
+        return 0 if got <= 0 else got
 
 cdef class IOUringFileWriter:
     cdef:
@@ -134,6 +168,9 @@ cdef class IOUringFileWriter:
 
         if PyUnicode_Check(bdata):
             base = PyUnicode_AsUTF8AndSize(bdata, &total_bytes)
+        elif isinstance(bdata, _PinnedBuffer):
+            total_bytes = (<_PinnedBuffer>bdata).view.len
+            base = <const char*>(<_PinnedBuffer>bdata).view.buf
         else:
             total_bytes = PyBytes_GET_SIZE(bdata)
             base = PyBytes_AS_STRING(bdata)

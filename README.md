@@ -179,6 +179,24 @@ async def send_static_file(transport: asyncio.Transport):
         )
 ```
 
+### Zero-Copy Pre-allocated Buffers (`readinto` & `memoryview` writes) and `asyncfiles.os`
+
+`BinaryFile.readinto(b)` and `BinaryFile.write(data)` pin any writable or readable buffer-protocol object (`memoryview`, `bytearray`, pinned shared memory) directly in C via `PyObject_GetBuffer` without intermediate `bytes` allocations. `asyncfiles.os` and `asyncfiles.os.path` also provide async wrappers around `os` and `os.path`:
+
+```python
+import asyncfiles
+import asyncfiles.os
+
+async def zero_copy_io(path: str, buf: memoryview):
+    async with asyncfiles.open(path, "wb") as f:
+        await f.write(buf)
+
+    if await asyncfiles.os.path.exists(path):
+        async with asyncfiles.open(path, "rb") as f:
+            n = await f.readinto(buf)
+        await asyncfiles.os.unlink(path)
+```
+
 ## 🎯 Supported File Modes
 
 | Mode | Description |

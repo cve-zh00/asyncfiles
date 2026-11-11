@@ -550,6 +550,83 @@ async def test_text_write_returns_utf8_byte_count(temp_file):
     assert Path(temp_file).read_bytes() == data.encode("utf-8")
 
 
+async def test_binary_readinto_and_buffer_write(temp_file):
+    payload = os.urandom(256 * 1024 + 37)
+
+    # Zero-copy write from memoryview and bytearray
+    async with async_open(temp_file, "wb") as f:
+        mv_in = memoryview(payload)
+        n1 = await f.write(mv_in[:100000])
+        n2 = await f.write(bytearray(mv_in[100000:]))
+        assert n1 == 100000
+        assert n2 == len(payload) - 100000
+
+    assert Path(temp_file).read_bytes() == payload
+
+    # Zero-copy readinto into bytearray and sliced memoryview
+    dest = bytearray(len(payload))
+    mv_out = memoryview(dest)
+    async with async_open(temp_file, "rb") as f:
+        total = 0
+        while total < len(payload):
+            n = await f.readinto(mv_out[total : min(total + 65536, len(payload))])
+            assert n > 0
+            total += n
+        assert await f.readinto(mv_out[:16]) == 0
+        assert await f.readinto(bytearray(0)) == 0
+
+    assert bytes(dest) == payload
+
+
+async def test_binary_readinto_errors_and_noncontiguous_write(temp_file):
+    async with async_open(temp_file, "wb") as f:
+        # Non-contiguous memoryview falls back cleanly
+        mv_strided = memoryview(b"a0b0c0d0")[::2]
+        n = await f.write(mv_strided)
+        assert n == 4
+        assert await f.write(b"") == 0
+
+    assert Path(temp_file).read_bytes() == b"abcd"
+
+    async with async_open(temp_file, "rb") as f:
+        with pytest.raises((TypeError, BufferError)):
+            await f.readinto(b"readonly")
+
+    with pytest.raises(ValueError):
+        await f.readinto(bytearray(4))
+
+
+async def test_asyncfiles_os_and_ospath(tmp_path):
+    import asyncfiles
+    import asyncfiles.os
+
+    src = tmp_path / "src.bin"
+    dst = tmp_path / "dst.bin"
+    sub = tmp_path / "subdir"
+
+    src.write_bytes(b"hello-os")
+    assert await asyncfiles.os.path.exists(src)
+    assert await asyncfiles.os.path.isfile(src)
+    assert await asyncfiles.os.path.getsize(src) == 8
+
+    st = await asyncfiles.os.stat(src)
+    assert st.st_size == 8
+
+    await asyncfiles.os.replace(src, dst)
+    assert not await asyncfiles.os.path.exists(src)
+    assert await asyncfiles.os.path.exists(dst)
+
+    await asyncfiles.os.mkdir(sub)
+    assert await asyncfiles.os.path.isdir(sub)
+    entries = await asyncfiles.os.listdir(tmp_path)
+    assert "dst.bin" in entries and "subdir" in entries
+
+    await asyncfiles.os.unlink(dst)
+    await asyncfiles.os.rmdir(sub)
+    assert not await asyncfiles.os.path.exists(dst)
+
+
+
 async def test_text_write_large_non_ascii_temporary(temp_file):
     # Above the io_uring parallel threshold; the str is a temporary that must
     # stay alive while the write is in flight.

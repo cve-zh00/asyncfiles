@@ -3,6 +3,7 @@
 from . cimport uv
 from .io_operations cimport IOOperation
 from .buffer_manager cimport BufferManager
+from .utils cimport _PinnedBuffer
 from libc.stdint cimport int64_t
 
 cdef class FileReader:
@@ -13,6 +14,7 @@ cdef class FileReader:
         bint binary
 
     cdef object _read_internal(self, Py_ssize_t length=*)
+    cdef object _readinto_internal(self, _PinnedBuffer pinned, Py_ssize_t total)
 
 
 cdef class FileWriter:

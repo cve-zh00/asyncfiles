@@ -4,7 +4,7 @@
 # cython: wraparound=False
 
 from . cimport uv
-from .utils cimport FileMode, new_future
+from .utils cimport FileMode, new_future, _PinnedBuffer
 from .event_loop cimport EventLoopPump, _get_or_create_pump, release_shared_pump
 from .io_operations cimport IOOperation
 from .buffer_manager cimport BufferManager
@@ -283,6 +283,32 @@ cdef class BaseFile:
                 self.file_mode.binary
             )
             return uv_reader.read(length, self.pump)
+
+    cdef object _readinto_internal(self, _PinnedBuffer pinned, Py_ssize_t length, int64_t read_offset=-1):
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
+        cdef FileReader uv_reader
+        cdef int64_t eff_offset = self.offset if read_offset < 0 else read_offset
+
+        if self.backend == "io_uring":
+            from .io_uring_file_io import IOUringFileReader
+            reader = IOUringFileReader(
+                self.io_op_uring,
+                self.buffer_mgr,
+                eff_offset,
+                self.size,
+                self.file_mode.binary
+            )
+            return reader.readinto(pinned, length)
+        else:
+            uv_reader = FileReader(
+                self.io_op,
+                self.buffer_mgr,
+                eff_offset,
+                self.size,
+                self.file_mode.binary
+            )
+            return uv_reader.readinto(pinned, length, self.pump)
 
     cdef object _write_internal(self, object bdata, int64_t write_offset=-2):
         if self._closed:

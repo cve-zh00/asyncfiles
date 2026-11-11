@@ -1,4 +1,5 @@
 
+from cpython.buffer cimport PyObject_GetBuffer, PyBuffer_Release
 from . cimport uv
 from posix.fcntl cimport (
     O_RDONLY, O_WRONLY, O_RDWR,
@@ -10,6 +11,20 @@ cimport cython
 cdef object new_future(object loop):
     # Callers take their own reference (ctx) with Py_INCREF; do not add one here.
     return loop.create_future()
+
+
+cdef class _PinnedBuffer:
+
+    def __cinit__(self, object obj, int flags):
+        self.acquired = False
+        PyObject_GetBuffer(obj, &self.view, flags)
+        self.acquired = True
+
+    def __dealloc__(self):
+        if self.acquired:
+            PyBuffer_Release(&self.view)
+            self.acquired = False
+
 
 cdef class FileMode:
 

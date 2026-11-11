@@ -1,7 +1,8 @@
 """Type stubs for asyncfiles package."""
 
 import asyncio
-import os
+from contextlib import AbstractAsyncContextManager
+import os as _os
 from pathlib import Path
 from typing import (
     AsyncIterator,
@@ -13,9 +14,10 @@ from typing import (
     overload,
 )
 
-from contextlib import AbstractAsyncContextManager
+from . import os as os, ospath as ospath
 
-PathLike = Union[str, bytes, Path, os.PathLike[str], os.PathLike[bytes]]
+
+PathLike = Union[str, bytes, Path, _os.PathLike[str], _os.PathLike[bytes]]
 
 OpenTextMode = Literal[
     "r",
@@ -107,6 +109,7 @@ class BinaryFile(File):
 
     async def __aenter__(self) -> BinaryFile: ...
     async def read(self, size: Optional[int] = -1) -> bytes: ...
+    async def readinto(self, b: Union[bytearray, memoryview]) -> int: ...
     async def readline(self, size: Optional[int] = -1) -> bytes: ...
     async def readlines(self, hint: Optional[int] = -1) -> list[bytes]: ...
     async def write(

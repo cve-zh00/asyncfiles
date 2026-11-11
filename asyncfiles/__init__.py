@@ -1,10 +1,11 @@
 import asyncio
 from functools import lru_cache
-import os
+import os as _os
 from pathlib import Path
 from typing import BinaryIO, Literal, Optional, Union
 
 from . import backend as _backend
+from . import os, ospath
 from .files import BinaryFile, TextFile
 from .sendfile import SendfileProtocol, sendfile_impl, validate_sendfile_args
 from .types import OpenTextMode
@@ -14,7 +15,15 @@ from .utils import FileMode, mode_to_posix
 __version__ = "1.10.4"
 __author__ = "Bastián García"
 __email__ = "bastiang@uc.cl"
-__all__ = ["open", "sendfile", "sendpath", "SendfileProtocol", "__version__"]
+__all__ = [
+    "open",
+    "os",
+    "ospath",
+    "sendfile",
+    "sendpath",
+    "SendfileProtocol",
+    "__version__",
+]
 
 
 def get_loop(
@@ -41,7 +50,7 @@ def open(
 
     # Convert PathLike / bytes to str if necessary
     if not isinstance(path, str):
-        path = os.fsdecode(path)
+        path = _os.fsdecode(path)
     file_mode = parse_mode(mode)
     FileClass = BinaryFile if file_mode.binary else TextFile
 
