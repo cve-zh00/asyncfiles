@@ -180,6 +180,10 @@ async def realpath(
     except (FileNotFoundError, NotADirectoryError):
         if strict:
             raise
+    except OSError:
+        if _os.name == "nt":
+            return _os_path.realpath(filename, strict=strict)
+        raise
 
     fspath = _os.fspath(filename)
     abs_path = _os_path.abspath(fspath)
@@ -198,6 +202,10 @@ async def realpath(
             if head == cur:
                 return abs_path
             cur = head
+        except OSError:
+            if _os.name == "nt":
+                return _os_path.realpath(filename, strict=strict)
+            raise
 
 
 __all__ = [

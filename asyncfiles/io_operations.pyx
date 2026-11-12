@@ -196,7 +196,7 @@ cdef inline tuple _encode_path(object path):
 
 cdef inline object _submit_uv_path1(
     object loop,
-    uv.uv_loop_t* uv_loop,
+    EventLoopPump uv_pump,
     bytes path_bytes,
     int op_kind,
     int arg_int,
@@ -204,6 +204,7 @@ cdef inline object _submit_uv_path1(
 ):
     cdef:
         object future = new_future(loop)
+        uv.uv_loop_t* uv_loop = uv_pump.uv_loop
         uv.uv_fs_t* req
         const char* path_cstr = <const char*>path_bytes
         int err
@@ -240,12 +241,14 @@ cdef inline object _submit_uv_path1(
     if err < 0:
         _abort_fs_request(req, future)
         future.set_exception(_uv_oserror(err, "uv_fs operation failed"))
+    else:
+        uv_pump.prime()
     return future
 
 
 cdef inline object _submit_uv_path2(
     object loop,
-    uv.uv_loop_t* uv_loop,
+    EventLoopPump uv_pump,
     bytes src_bytes,
     bytes dst_bytes,
     int op_kind,
@@ -254,6 +257,7 @@ cdef inline object _submit_uv_path2(
 ):
     cdef:
         object future = new_future(loop)
+        uv.uv_loop_t* uv_loop = uv_pump.uv_loop
         uv.uv_fs_t* req
         const char* src_cstr = <const char*>src_bytes
         const char* dst_cstr = <const char*>dst_bytes
@@ -279,12 +283,14 @@ cdef inline object _submit_uv_path2(
     if err < 0:
         _abort_fs_request(req, future)
         future.set_exception(_uv_oserror(err, "uv_fs operation failed"))
+    else:
+        uv_pump.prime()
     return future
 
 
 cdef inline object _submit_uv_fd(
     object loop,
-    uv.uv_loop_t* uv_loop,
+    EventLoopPump uv_pump,
     int fd,
     uv.uv_fs_cb cb,
 ):
@@ -299,10 +305,12 @@ cdef inline object _submit_uv_fd(
         future.set_exception(exc)
         return future
 
-    err = uv.uv_fs_fstat(uv_loop, req, fd, cb)
+    err = uv.uv_fs_fstat(uv_pump.uv_loop, req, fd, cb)
     if err < 0:
         _abort_fs_request(req, future)
         future.set_exception(_uv_oserror(err, "uv_fs_fstat failed"))
+    else:
+        uv_pump.prime()
     return future
 
 
@@ -310,8 +318,11 @@ async def fs_ftruncate_uv(object loop, int fd, int64_t length):
     """Truncate open fd via libuv (also used by io_uring on kernels < 6.9)."""
     cdef EventLoopPump pump = _get_or_create_pump(loop, NULL)
     cdef IOOperation op = IOOperation.create(loop, pump.uv_loop, fd, NULL)
+    cdef object fut
     try:
-        await op.truncate_file(length)
+        fut = op.truncate_file(length)
+        pump.prime()
+        await fut
     finally:
         release_shared_pump(loop)
 
@@ -334,7 +345,7 @@ async def fs_stat(object path, bint follow_symlinks=True, object loop=None, str 
                 _release_uring_pump(loop)
         uv_pump = _get_or_create_pump(loop, NULL)
         try:
-            return await _submit_uv_fd(loop, uv_pump.uv_loop, <int>path, cb_full_stat)
+            return await _submit_uv_fd(loop, uv_pump, <int>path, cb_full_stat)
         finally:
             release_shared_pump(loop)
 
@@ -352,7 +363,7 @@ async def fs_stat(object path, bint follow_symlinks=True, object loop=None, str 
     uv_pump = _get_or_create_pump(loop, NULL)
     try:
         return await _submit_uv_path1(
-            loop, uv_pump.uv_loop, path_bytes, 1 if follow_symlinks else 2, 0, cb_full_stat
+            loop, uv_pump, path_bytes, 1 if follow_symlinks else 2, 0, cb_full_stat
         )
     finally:
         release_shared_pump(loop)
@@ -389,7 +400,7 @@ async def fs_stat_query(
     if isinstance(path, int) and query_kind == 2:
         uv_pump = _get_or_create_pump(loop, NULL)
         try:
-            return await _submit_uv_fd(loop, uv_pump.uv_loop, <int>path, cb_stat_exists)
+            return await _submit_uv_fd(loop, uv_pump, <int>path, cb_stat_exists)
         finally:
             release_shared_pump(loop)
 
@@ -439,7 +450,7 @@ async def fs_stat_query(
     uv_pump = _get_or_create_pump(loop, NULL)
     try:
         return await _submit_uv_path1(
-            loop, uv_pump.uv_loop, path_bytes, 1 if follow_symlinks else 2, 0, cb
+            loop, uv_pump, path_bytes, 1 if follow_symlinks else 2, 0, cb
         )
     finally:
         release_shared_pump(loop)
@@ -464,7 +475,7 @@ async def fs_unlink(object path, object loop=None, str backend="auto"):
 
     uv_pump = _get_or_create_pump(loop, NULL)
     try:
-        await _submit_uv_path1(loop, uv_pump.uv_loop, path_bytes, 3, 0, cb_close)
+        await _submit_uv_path1(loop, uv_pump, path_bytes, 3, 0, cb_close)
     finally:
         release_shared_pump(loop)
 
@@ -488,7 +499,7 @@ async def fs_mkdir(object path, int mode=0o777, object loop=None, str backend="a
 
     uv_pump = _get_or_create_pump(loop, NULL)
     try:
-        await _submit_uv_path1(loop, uv_pump.uv_loop, path_bytes, 4, mode, cb_close)
+        await _submit_uv_path1(loop, uv_pump, path_bytes, 4, mode, cb_close)
     finally:
         release_shared_pump(loop)
 
@@ -513,7 +524,7 @@ async def fs_rmdir(object path, object loop=None, str backend="auto"):
 
     uv_pump = _get_or_create_pump(loop, NULL)
     try:
-        await _submit_uv_path1(loop, uv_pump.uv_loop, path_bytes, 5, 0, cb_close)
+        await _submit_uv_path1(loop, uv_pump, path_bytes, 5, 0, cb_close)
     finally:
         release_shared_pump(loop)
 
@@ -538,7 +549,7 @@ async def fs_rename(object src, object dst, object loop=None, str backend="auto"
 
     uv_pump = _get_or_create_pump(loop, NULL)
     try:
-        await _submit_uv_path2(loop, uv_pump.uv_loop, src_bytes, dst_bytes, 1, 0, cb_close)
+        await _submit_uv_path2(loop, uv_pump, src_bytes, dst_bytes, 1, 0, cb_close)
     finally:
         release_shared_pump(loop)
 
@@ -572,7 +583,7 @@ async def fs_link(
 
     uv_pump = _get_or_create_pump(loop, NULL)
     try:
-        await _submit_uv_path2(loop, uv_pump.uv_loop, src_bytes, dst_bytes, 2, 0, cb_close)
+        await _submit_uv_path2(loop, uv_pump, src_bytes, dst_bytes, 2, 0, cb_close)
     finally:
         release_shared_pump(loop)
 
@@ -605,7 +616,7 @@ async def fs_symlink(
     uv_pump = _get_or_create_pump(loop, NULL)
     try:
         await _submit_uv_path2(
-            loop, uv_pump.uv_loop, src_bytes, dst_bytes, 3, flags, cb_close
+            loop, uv_pump, src_bytes, dst_bytes, 3, flags, cb_close
         )
     finally:
         release_shared_pump(loop)
@@ -622,7 +633,7 @@ async def fs_readlink(object path, object loop=None):
     cdef bytes raw
     try:
         raw = await _submit_uv_path1(
-            loop, uv_pump.uv_loop, path_bytes, 6, 0, cb_ptr_bytes
+            loop, uv_pump, path_bytes, 6, 0, cb_ptr_bytes
         )
     finally:
         release_shared_pump(loop)
@@ -640,7 +651,7 @@ async def fs_realpath_strict(object path, object loop=None):
     cdef bytes raw
     try:
         raw = await _submit_uv_path1(
-            loop, uv_pump.uv_loop, path_bytes, 7, 0, cb_ptr_bytes
+            loop, uv_pump, path_bytes, 7, 0, cb_ptr_bytes
         )
     finally:
         release_shared_pump(loop)
@@ -674,7 +685,7 @@ async def fs_access(
     cdef EventLoopPump uv_pump = _get_or_create_pump(loop, NULL)
     try:
         return await _submit_uv_path1(
-            loop, uv_pump.uv_loop, path_bytes, 8, mode, cb_access_bool
+            loop, uv_pump, path_bytes, 8, mode, cb_access_bool
         )
     finally:
         release_shared_pump(loop)
@@ -692,7 +703,7 @@ async def fs_listdir(object path=".", object loop=None):
     cdef EventLoopPump uv_pump = _get_or_create_pump(loop, NULL)
     cdef uv.uv_fs_cb cb = cb_scandir_names_bytes if is_bytes else cb_scandir_names_str
     try:
-        return await _submit_uv_path1(loop, uv_pump.uv_loop, path_bytes, 9, 0, cb)
+        return await _submit_uv_path1(loop, uv_pump, path_bytes, 9, 0, cb)
     finally:
         release_shared_pump(loop)
 
@@ -710,7 +721,7 @@ async def fs_scandir_raw(object path=".", object loop=None):
     cdef EventLoopPump uv_pump = _get_or_create_pump(loop, NULL)
     try:
         entries = await _submit_uv_path1(
-            loop, uv_pump.uv_loop, path_bytes, 9, 0, cb_scandir_entries
+            loop, uv_pump, path_bytes, 9, 0, cb_scandir_entries
         )
     finally:
         release_shared_pump(loop)
@@ -728,6 +739,9 @@ async def fs_truncate(object path, int64_t length, object loop=None, str backend
     cdef EventLoopPump uv_pump
     cdef object uring_pump
     cdef IOOperation uv_op
+    cdef object open_fut
+    cdef object trunc_fut
+    cdef object close_fut
     cdef int fd = -1
     cdef bytes path_bytes
 
@@ -749,12 +763,18 @@ async def fs_truncate(object path, int64_t length, object loop=None, str backend
     uv_pump = _get_or_create_pump(loop, NULL)
     try:
         uv_op = IOOperation.create(loop, uv_pump.uv_loop, -1, <const char*>path_bytes)
-        fd = await uv_op.open_file(os.O_WRONLY)
+        open_fut = uv_op.open_file(os.O_WRONLY)
+        uv_pump.prime()
+        fd = await open_fut
         uv_op.fd = fd
         try:
-            await uv_op.truncate_file(length)
+            trunc_fut = uv_op.truncate_file(length)
+            uv_pump.prime()
+            await trunc_fut
         finally:
-            await uv_op.close_file()
+            close_fut = uv_op.close_file()
+            uv_pump.prime()
+            await close_fut
     finally:
         release_shared_pump(loop)
 
@@ -768,7 +788,7 @@ async def fs_copyfile(object src, object dst, int flags=0, object loop=None):
     cdef EventLoopPump uv_pump = _get_or_create_pump(loop, NULL)
     try:
         await _submit_uv_path2(
-            loop, uv_pump.uv_loop, src_bytes, dst_bytes, 4, flags, cb_close
+            loop, uv_pump, src_bytes, dst_bytes, 4, flags, cb_close
         )
     finally:
         release_shared_pump(loop)
@@ -782,7 +802,7 @@ async def fs_statfs(object path, object loop=None):
     cdef EventLoopPump uv_pump = _get_or_create_pump(loop, NULL)
     try:
         return await _submit_uv_path1(
-            loop, uv_pump.uv_loop, path_bytes, 10, 0, cb_statfs
+            loop, uv_pump, path_bytes, 10, 0, cb_statfs
         )
     finally:
         release_shared_pump(loop)

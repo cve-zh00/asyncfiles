@@ -145,6 +145,7 @@ cdef class EventLoopPump:
         pump._tick_handle = None
         pump._backend_fd = uv.uv_backend_fd(uv_loop)
         pump._running = False
+        pump._primed = False
         pump._ref_count = 0
         return pump
 

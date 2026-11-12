@@ -1040,6 +1040,9 @@ async def test_concurrent_reads_and_writes_same_file_handle(tmp_path):
 
 
 async def test_fallback_polling_stops_when_idle(temp_file):
+    import asyncfiles.os as async_os
+    import asyncfiles.ospath as async_ospath
+
     Path(temp_file).write_bytes(b"hello fallback")
     loop = asyncio.get_running_loop()
     orig_add_reader = loop.add_reader
@@ -1064,6 +1067,11 @@ async def test_fallback_polling_stops_when_idle(temp_file):
             assert tick_calls - before_idle == 0
             assert await f.read() == b"hello fallback"
             assert await f.truncate(5) == 5
+        st = await async_os.stat(temp_file, backend="libuv")
+        assert st.st_size == 5
+        assert await async_ospath.exists(temp_file, backend="libuv") is True
+        await async_os.truncate(temp_file, 3, backend="libuv")
+        assert await async_ospath.getsize(temp_file, backend="libuv") == 3
     finally:
         setattr(loop, "add_reader", orig_add_reader)
         setattr(loop, "call_soon", orig_call_soon)
