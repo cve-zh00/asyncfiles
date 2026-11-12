@@ -101,10 +101,3 @@ jobs:
 
       - name: Test
         run: python -m pytest tests/ -v
-
-  regression-tests:
-    name: "Regression Tests"
-    needs: [test, test-windows]
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo OK
