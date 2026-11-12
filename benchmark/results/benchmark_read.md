@@ -5,13 +5,13 @@ This document contains the benchmark results for read operations using different
 ## Test Configuration
 
 - **Container**: 2.0 CPUs, 1024 MB RAM
-- **Kernel**: 6.8.0-117-generic (aarch64)
+- **Kernel**: 7.0.0-1019-azure (x86_64)
 - **Iterations**: 50
 - **Concurrency**: 1, 8, 16, 32
 - **File sizes**: 256KB, 512KB, 1MB
 - **Page cache**: cold (evicted)
 - **Libraries Tested**: aiofile, aiofiles, anyio, asyncfiles-io_uring, asyncfiles-libuv
-- **Generated**: 2026-11-12 13:25 UTC
+- **Generated**: 2026-11-12 23:35 UTC
 
 ## Summary
 
@@ -19,9 +19,11 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | Wins |
 |----------------|------|
-| asyncfiles-io_uring | 7 |
-| asyncfiles-libuv | 4 |
-| anyio | 1 |
+| aiofile | 5 |
+| asyncfiles-io_uring | 3 |
+| anyio | 2 |
+| aiofiles | 1 |
+| asyncfiles-libuv | 1 |
 
 
 ---
@@ -30,25 +32,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-io_uring | 1177.7 | 4710.7 | 0.2 | 0.2 | 0.2 | 0.01 | 0 | 20 | 50 |
-| anyio | 855.4 | 3421.5 | 0.3 | 0.3 | 0.4 | 0.03 | 0 | 22 | 50 |
-| asyncfiles-libuv | 715.4 | 2861.6 | 0.3 | 0.4 | 0.5 | 0.01 | 0 | 20 | 50 |
-| aiofiles | 649.7 | 2598.8 | 0.4 | 0.4 | 0.5 | 0.02 | 0 | 20 | 50 |
-| aiofile | 621.8 | 2487.1 | 0.3 | 0.5 | 2.3 | 0.04 | 0 | 20 | 50 |
+| asyncfiles-io_uring | 417.2 | 1668.9 | 0.5 | 0.6 | 1.6 | 0.02 | 0 | 20 | 50 |
+| asyncfiles-libuv | 381.7 | 1526.8 | 0.6 | 0.7 | 1.1 | 0.02 | 0 | 20 | 50 |
+| aiofiles | 292.8 | 1171.3 | 0.8 | 0.9 | 1.0 | 0.03 | 0 | 21 | 50 |
+| anyio | 269.5 | 1077.9 | 0.9 | 1.1 | 1.1 | 0.09 | 0 | 23 | 50 |
+| aiofile | 268.1 | 1072.6 | 0.9 | 1.0 | 1.1 | 0.12 | 0 | 22 | 50 |
 
 ## 🏆 Winner: **asyncfiles-io_uring**
 
-- **Throughput**: 1177.7 MB/s (4710.7 ops/s)
-- **p95 Latency**: 0.2 ms
-- **CPU Time**: 0.01 s
+- **Throughput**: 417.2 MB/s (1668.9 ops/s)
+- **p95 Latency**: 0.6 ms
+- **CPU Time**: 0.02 s
 - **Peak Memory**: 20 MB
 
 ## Performance Comparison
 
-- **anyio**: 1.38x slower than asyncfiles-io_uring
-- **asyncfiles-libuv**: 1.65x slower than asyncfiles-io_uring
-- **aiofiles**: 1.81x slower than asyncfiles-io_uring
-- **aiofile**: 1.89x slower than asyncfiles-io_uring
+- **asyncfiles-libuv**: 1.09x slower than asyncfiles-io_uring
+- **aiofiles**: 1.42x slower than asyncfiles-io_uring
+- **anyio**: 1.55x slower than asyncfiles-io_uring
+- **aiofile**: 1.56x slower than asyncfiles-io_uring
 
 
 ---
@@ -57,25 +59,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-io_uring | 3439.2 | 13756.8 | 0.5 | 0.6 | 0.7 | 0.04 | 0 | 24 | 50 |
-| asyncfiles-libuv | 2321.1 | 9284.5 | 0.6 | 0.9 | 1.3 | 0.09 | 0 | 24 | 50 |
-| aiofile | 1744.0 | 6975.8 | 0.9 | 1.7 | 2.3 | 0.13 | 0 | 29 | 50 |
-| aiofiles | 1275.0 | 5100.0 | 1.1 | 2.7 | 3.5 | 0.10 | 0 | 27 | 50 |
-| anyio | 1229.8 | 4919.4 | 1.2 | 2.4 | 5.5 | 0.16 | 0 | 31 | 50 |
+| asyncfiles-io_uring | 1256.7 | 5026.7 | 1.5 | 1.6 | 1.8 | 0.07 | 0 | 27 | 50 |
+| asyncfiles-libuv | 1105.5 | 4422.1 | 1.3 | 1.7 | 1.9 | 0.18 | 0 | 26 | 50 |
+| aiofile | 539.7 | 2158.8 | 2.9 | 3.5 | 8.2 | 0.47 | 2 | 30 | 50 |
+| anyio | 468.6 | 1874.4 | 3.6 | 4.4 | 6.7 | 0.41 | 0 | 34 | 50 |
+| aiofiles | 438.9 | 1755.6 | 2.8 | 3.6 | 29.1 | 0.29 | 0 | 29 | 50 |
 
 ## 🏆 Winner: **asyncfiles-io_uring**
 
-- **Throughput**: 3439.2 MB/s (13756.8 ops/s)
-- **p95 Latency**: 0.6 ms
-- **CPU Time**: 0.04 s
-- **Peak Memory**: 24 MB
+- **Throughput**: 1256.7 MB/s (5026.7 ops/s)
+- **p95 Latency**: 1.6 ms
+- **CPU Time**: 0.07 s
+- **Peak Memory**: 27 MB
 
 ## Performance Comparison
 
-- **asyncfiles-libuv**: 1.48x slower than asyncfiles-io_uring
-- **aiofile**: 1.97x slower than asyncfiles-io_uring
-- **aiofiles**: 2.70x slower than asyncfiles-io_uring
-- **anyio**: 2.80x slower than asyncfiles-io_uring
+- **asyncfiles-libuv**: 1.14x slower than asyncfiles-io_uring
+- **aiofile**: 2.33x slower than asyncfiles-io_uring
+- **anyio**: 2.68x slower than asyncfiles-io_uring
+- **aiofiles**: 2.86x slower than asyncfiles-io_uring
 
 
 ---
@@ -84,25 +86,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-io_uring | 3559.7 | 14239.0 | 1.0 | 1.2 | 1.4 | 0.08 | 0 | 36 | 50 |
-| asyncfiles-libuv | 3158.0 | 12631.8 | 0.8 | 1.3 | 1.5 | 0.12 | 0 | 36 | 50 |
-| aiofiles | 1599.8 | 6399.1 | 2.1 | 2.6 | 2.8 | 0.19 | 0 | 36 | 50 |
-| aiofile | 1303.4 | 5213.7 | 2.3 | 4.0 | 5.0 | 0.29 | 0 | 37 | 50 |
-| anyio | 973.0 | 3892.1 | 2.9 | 6.5 | 11.6 | 0.31 | 0 | 39 | 50 |
+| aiofiles | 475.0 | 1899.9 | 5.1 | 20.8 | 36.4 | 0.53 | 0 | 39 | 50 |
+| aiofile | 465.9 | 1863.6 | 5.0 | 16.6 | 31.5 | 0.93 | 0 | 39 | 50 |
+| asyncfiles-libuv | 464.4 | 1857.6 | 2.0 | 30.2 | 31.5 | 0.26 | 0 | 39 | 50 |
+| asyncfiles-io_uring | 461.5 | 1845.9 | 2.3 | 34.4 | 38.8 | 0.14 | 0 | 38 | 50 |
+| anyio | 422.2 | 1688.9 | 6.3 | 13.7 | 30.6 | 0.71 | 1 | 42 | 50 |
 
-## 🏆 Winner: **asyncfiles-io_uring**
+## 🏆 Winner: **aiofiles**
 
-- **Throughput**: 3559.7 MB/s (14239.0 ops/s)
-- **p95 Latency**: 1.2 ms
-- **CPU Time**: 0.08 s
-- **Peak Memory**: 36 MB
+- **Throughput**: 475.0 MB/s (1899.9 ops/s)
+- **p95 Latency**: 20.8 ms
+- **CPU Time**: 0.53 s
+- **Peak Memory**: 39 MB
 
 ## Performance Comparison
 
-- **asyncfiles-libuv**: 1.13x slower than asyncfiles-io_uring
-- **aiofiles**: 2.23x slower than asyncfiles-io_uring
-- **aiofile**: 2.73x slower than asyncfiles-io_uring
-- **anyio**: 3.66x slower than asyncfiles-io_uring
+- **aiofile**: 1.02x slower than aiofiles
+- **asyncfiles-libuv**: 1.02x slower than aiofiles
+- **asyncfiles-io_uring**: 1.03x slower than aiofiles
+- **anyio**: 1.12x slower than aiofiles
 
 
 ---
@@ -111,25 +113,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-io_uring | 4226.3 | 16905.0 | 1.7 | 2.0 | 2.3 | 0.12 | 0 | 40 | 50 |
-| asyncfiles-libuv | 3854.8 | 15419.1 | 1.2 | 2.0 | 2.3 | 0.20 | 0 | 43 | 50 |
-| aiofiles | 2115.0 | 8460.1 | 3.3 | 3.8 | 4.1 | 0.29 | 0 | 51 | 50 |
-| aiofile | 1482.9 | 5931.7 | 4.1 | 7.8 | 8.2 | 0.47 | 0 | 51 | 50 |
-| anyio | 1342.8 | 5371.2 | 4.9 | 9.3 | 13.4 | 0.45 | 0 | 54 | 50 |
+| aiofile | 463.8 | 1855.4 | 9.3 | 28.6 | 41.7 | 1.73 | 1 | 52 | 50 |
+| asyncfiles-libuv | 444.8 | 1779.3 | 3.6 | 34.8 | 46.5 | 0.51 | 0 | 51 | 50 |
+| asyncfiles-io_uring | 444.3 | 1777.2 | 3.3 | 40.9 | 54.9 | 0.26 | 0 | 51 | 50 |
+| anyio | 433.2 | 1732.6 | 11.7 | 28.2 | 44.5 | 1.26 | 0 | 58 | 50 |
+| aiofiles | 417.6 | 1670.6 | 10.0 | 32.1 | 40.1 | 1.03 | 0 | 52 | 50 |
 
-## 🏆 Winner: **asyncfiles-io_uring**
+## 🏆 Winner: **aiofile**
 
-- **Throughput**: 4226.3 MB/s (16905.0 ops/s)
-- **p95 Latency**: 2.0 ms
-- **CPU Time**: 0.12 s
-- **Peak Memory**: 40 MB
+- **Throughput**: 463.8 MB/s (1855.4 ops/s)
+- **p95 Latency**: 28.6 ms
+- **CPU Time**: 1.73 s
+- **Peak Memory**: 52 MB
 
 ## Performance Comparison
 
-- **asyncfiles-libuv**: 1.10x slower than asyncfiles-io_uring
-- **aiofiles**: 2.00x slower than asyncfiles-io_uring
-- **aiofile**: 2.85x slower than asyncfiles-io_uring
-- **anyio**: 3.15x slower than asyncfiles-io_uring
+- **asyncfiles-libuv**: 1.04x slower than aiofile
+- **asyncfiles-io_uring**: 1.04x slower than aiofile
+- **anyio**: 1.07x slower than aiofile
+- **aiofiles**: 1.11x slower than aiofile
 
 
 ---
@@ -138,25 +140,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| anyio | 1613.1 | 3226.1 | 0.3 | 0.4 | 0.4 | 0.03 | 0 | 45 | 50 |
-| asyncfiles-io_uring | 1572.3 | 3144.6 | 0.3 | 0.4 | 0.5 | 0.01 | 0 | 46 | 50 |
-| asyncfiles-libuv | 1102.4 | 2204.7 | 0.4 | 0.6 | 1.0 | 0.02 | 0 | 46 | 50 |
-| aiofiles | 1086.9 | 2173.8 | 0.4 | 0.5 | 0.5 | 0.02 | 0 | 46 | 50 |
-| aiofile | 997.4 | 1994.7 | 0.4 | 0.9 | 1.8 | 0.04 | 0 | 45 | 50 |
+| asyncfiles-io_uring | 676.7 | 1353.4 | 0.6 | 0.7 | 2.6 | 0.02 | 0 | 50 | 50 |
+| asyncfiles-libuv | 600.5 | 1200.9 | 0.8 | 0.8 | 1.6 | 0.03 | 0 | 50 | 50 |
+| aiofiles | 502.6 | 1005.1 | 0.9 | 1.2 | 1.4 | 0.04 | 0 | 51 | 50 |
+| anyio | 475.7 | 951.4 | 1.0 | 1.2 | 1.5 | 0.09 | 0 | 51 | 50 |
+| aiofile | 441.0 | 881.9 | 1.1 | 1.2 | 2.0 | 0.15 | 0 | 51 | 50 |
 
-## 🏆 Winner: **anyio**
+## 🏆 Winner: **asyncfiles-io_uring**
 
-- **Throughput**: 1613.1 MB/s (3226.1 ops/s)
-- **p95 Latency**: 0.4 ms
-- **CPU Time**: 0.03 s
-- **Peak Memory**: 45 MB
+- **Throughput**: 676.7 MB/s (1353.4 ops/s)
+- **p95 Latency**: 0.7 ms
+- **CPU Time**: 0.02 s
+- **Peak Memory**: 50 MB
 
 ## Performance Comparison
 
-- **asyncfiles-io_uring**: 1.03x slower than anyio
-- **asyncfiles-libuv**: 1.46x slower than anyio
-- **aiofiles**: 1.48x slower than anyio
-- **aiofile**: 1.62x slower than anyio
+- **asyncfiles-libuv**: 1.13x slower than asyncfiles-io_uring
+- **aiofiles**: 1.35x slower than asyncfiles-io_uring
+- **anyio**: 1.42x slower than asyncfiles-io_uring
+- **aiofile**: 1.53x slower than asyncfiles-io_uring
 
 
 ---
@@ -165,25 +167,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-io_uring | 3596.0 | 7192.1 | 1.0 | 1.2 | 1.3 | 0.07 | 0 | 46 | 50 |
-| asyncfiles-libuv | 3547.2 | 7094.4 | 0.8 | 1.2 | 1.3 | 0.12 | 0 | 46 | 50 |
-| aiofiles | 2405.2 | 4810.4 | 1.4 | 1.8 | 1.9 | 0.13 | 0 | 50 | 50 |
-| aiofile | 1545.1 | 3090.3 | 1.8 | 3.5 | 7.3 | 0.24 | 0 | 50 | 50 |
-| anyio | 1513.8 | 3027.5 | 2.1 | 3.9 | 5.1 | 0.22 | 0 | 50 | 50 |
+| asyncfiles-libuv | 904.4 | 1808.7 | 1.7 | 3.4 | 38.4 | 0.19 | 0 | 54 | 50 |
+| aiofiles | 496.0 | 992.1 | 3.4 | 26.8 | 43.3 | 0.36 | 0 | 57 | 50 |
+| asyncfiles-io_uring | 470.2 | 940.5 | 2.1 | 35.8 | 51.2 | 0.13 | 0 | 55 | 50 |
+| aiofile | 468.1 | 936.2 | 3.4 | 26.9 | 40.3 | 0.76 | 0 | 57 | 50 |
+| anyio | 451.7 | 903.3 | 3.8 | 26.1 | 28.1 | 0.49 | 0 | 59 | 50 |
 
-## 🏆 Winner: **asyncfiles-io_uring**
+## 🏆 Winner: **asyncfiles-libuv**
 
-- **Throughput**: 3596.0 MB/s (7192.1 ops/s)
-- **p95 Latency**: 1.2 ms
-- **CPU Time**: 0.07 s
-- **Peak Memory**: 46 MB
+- **Throughput**: 904.4 MB/s (1808.7 ops/s)
+- **p95 Latency**: 3.4 ms
+- **CPU Time**: 0.19 s
+- **Peak Memory**: 54 MB
 
 ## Performance Comparison
 
-- **asyncfiles-libuv**: 1.01x slower than asyncfiles-io_uring
-- **aiofiles**: 1.50x slower than asyncfiles-io_uring
-- **aiofile**: 2.33x slower than asyncfiles-io_uring
-- **anyio**: 2.38x slower than asyncfiles-io_uring
+- **aiofiles**: 1.82x slower than asyncfiles-libuv
+- **asyncfiles-io_uring**: 1.92x slower than asyncfiles-libuv
+- **aiofile**: 1.93x slower than asyncfiles-libuv
+- **anyio**: 2.00x slower than asyncfiles-libuv
 
 
 ---
@@ -192,25 +194,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-io_uring | 3800.7 | 7601.3 | 2.0 | 2.2 | 2.2 | 0.13 | 0 | 54 | 50 |
-| asyncfiles-libuv | 3289.0 | 6578.0 | 1.6 | 2.6 | 3.0 | 0.23 | 0 | 54 | 50 |
-| aiofiles | 2717.7 | 5435.5 | 2.4 | 3.1 | 3.4 | 0.24 | 0 | 57 | 50 |
-| aiofile | 2170.5 | 4341.0 | 2.8 | 4.9 | 5.8 | 0.33 | 0 | 55 | 50 |
-| anyio | 2079.8 | 4159.6 | 3.2 | 5.4 | 6.4 | 0.32 | 0 | 58 | 50 |
+| aiofile | 458.0 | 916.0 | 6.4 | 35.8 | 43.4 | 1.45 | 0 | 64 | 50 |
+| anyio | 449.3 | 898.6 | 7.0 | 35.8 | 50.3 | 0.82 | 0 | 65 | 50 |
+| asyncfiles-io_uring | 438.7 | 877.3 | 2.9 | 42.5 | 51.6 | 0.23 | 0 | 63 | 50 |
+| asyncfiles-libuv | 437.3 | 874.5 | 2.7 | 38.0 | 53.6 | 0.39 | 0 | 64 | 50 |
+| aiofiles | 434.3 | 868.7 | 5.6 | 48.6 | 52.2 | 0.66 | 0 | 64 | 50 |
 
-## 🏆 Winner: **asyncfiles-io_uring**
+## 🏆 Winner: **aiofile**
 
-- **Throughput**: 3800.7 MB/s (7601.3 ops/s)
-- **p95 Latency**: 2.2 ms
-- **CPU Time**: 0.13 s
-- **Peak Memory**: 54 MB
+- **Throughput**: 458.0 MB/s (916.0 ops/s)
+- **p95 Latency**: 35.8 ms
+- **CPU Time**: 1.45 s
+- **Peak Memory**: 64 MB
 
 ## Performance Comparison
 
-- **asyncfiles-libuv**: 1.16x slower than asyncfiles-io_uring
-- **aiofiles**: 1.40x slower than asyncfiles-io_uring
-- **aiofile**: 1.75x slower than asyncfiles-io_uring
-- **anyio**: 1.83x slower than asyncfiles-io_uring
+- **anyio**: 1.02x slower than aiofile
+- **asyncfiles-io_uring**: 1.04x slower than aiofile
+- **asyncfiles-libuv**: 1.05x slower than aiofile
+- **aiofiles**: 1.05x slower than aiofile
 
 
 ---
@@ -219,25 +221,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-libuv | 6025.0 | 12050.1 | 1.5 | 2.5 | 2.7 | 0.26 | 0 | 63 | 50 |
-| asyncfiles-io_uring | 4771.0 | 9542.0 | 3.2 | 3.6 | 3.7 | 0.20 | 0 | 74 | 50 |
-| aiofiles | 4389.0 | 8778.0 | 3.3 | 4.4 | 5.1 | 0.30 | 0 | 74 | 50 |
-| anyio | 2793.6 | 5587.1 | 5.0 | 6.0 | 9.9 | 0.48 | 0 | 83 | 50 |
-| aiofile | 2668.9 | 5337.9 | 4.8 | 7.5 | 8.2 | 0.50 | 0 | 77 | 50 |
+| anyio | 437.9 | 875.9 | 13.3 | 56.5 | 58.9 | 1.54 | 0 | 90 | 50 |
+| aiofile | 437.2 | 874.3 | 13.0 | 44.2 | 58.8 | 2.90 | 0 | 84 | 50 |
+| aiofiles | 425.8 | 851.6 | 35.5 | 57.7 | 58.7 | 1.30 | 0 | 84 | 50 |
+| asyncfiles-io_uring | 425.1 | 850.1 | 6.8 | 53.0 | 60.6 | 0.48 | 0 | 82 | 50 |
+| asyncfiles-libuv | 420.3 | 840.6 | 5.3 | 53.0 | 57.2 | 0.77 | 0 | 82 | 50 |
 
-## 🏆 Winner: **asyncfiles-libuv**
+## 🏆 Winner: **anyio**
 
-- **Throughput**: 6025.0 MB/s (12050.1 ops/s)
-- **p95 Latency**: 2.5 ms
-- **CPU Time**: 0.26 s
-- **Peak Memory**: 63 MB
+- **Throughput**: 437.9 MB/s (875.9 ops/s)
+- **p95 Latency**: 56.5 ms
+- **CPU Time**: 1.54 s
+- **Peak Memory**: 90 MB
 
 ## Performance Comparison
 
-- **asyncfiles-io_uring**: 1.26x slower than asyncfiles-libuv
-- **aiofiles**: 1.37x slower than asyncfiles-libuv
-- **anyio**: 2.16x slower than asyncfiles-libuv
-- **aiofile**: 2.26x slower than asyncfiles-libuv
+- **aiofile**: about the same as anyio
+- **aiofiles**: 1.03x slower than anyio
+- **asyncfiles-io_uring**: 1.03x slower than anyio
+- **asyncfiles-libuv**: 1.04x slower than anyio
 
 
 ---
@@ -246,25 +248,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-libuv | 2512.4 | 2512.4 | 0.3 | 0.6 | 1.3 | 0.02 | 0 | 66 | 50 |
-| asyncfiles-io_uring | 2417.7 | 2417.7 | 0.3 | 0.5 | 2.2 | 0.01 | 0 | 66 | 50 |
-| aiofile | 1577.4 | 1577.4 | 0.5 | 1.3 | 1.6 | 0.03 | 0 | 66 | 50 |
-| aiofiles | 1444.5 | 1444.5 | 0.7 | 0.9 | 0.9 | 0.02 | 0 | 66 | 50 |
-| anyio | 673.4 | 673.4 | 1.4 | 2.3 | 2.6 | 0.09 | 0 | 67 | 50 |
+| anyio | 567.2 | 567.2 | 1.4 | 2.0 | 17.2 | 0.12 | 0 | 75 | 50 |
+| aiofile | 561.3 | 561.3 | 1.4 | 2.3 | 9.6 | 0.16 | 0 | 76 | 50 |
+| aiofiles | 548.5 | 548.5 | 1.3 | 1.5 | 17.6 | 0.05 | 0 | 76 | 50 |
+| asyncfiles-io_uring | 446.6 | 446.6 | 1.0 | 1.4 | 40.9 | 0.03 | 0 | 76 | 50 |
+| asyncfiles-libuv | 356.3 | 356.3 | 1.2 | 18.7 | 44.9 | 0.04 | 0 | 76 | 50 |
 
-## 🏆 Winner: **asyncfiles-libuv**
+## 🏆 Winner: **anyio**
 
-- **Throughput**: 2512.4 MB/s (2512.4 ops/s)
-- **p95 Latency**: 0.6 ms
-- **CPU Time**: 0.02 s
-- **Peak Memory**: 66 MB
+- **Throughput**: 567.2 MB/s (567.2 ops/s)
+- **p95 Latency**: 2.0 ms
+- **CPU Time**: 0.12 s
+- **Peak Memory**: 75 MB
 
 ## Performance Comparison
 
-- **asyncfiles-io_uring**: 1.04x slower than asyncfiles-libuv
-- **aiofile**: 1.59x slower than asyncfiles-libuv
-- **aiofiles**: 1.74x slower than asyncfiles-libuv
-- **anyio**: 3.73x slower than asyncfiles-libuv
+- **aiofile**: 1.01x slower than anyio
+- **aiofiles**: 1.03x slower than anyio
+- **asyncfiles-io_uring**: 1.27x slower than anyio
+- **asyncfiles-libuv**: 1.59x slower than anyio
 
 
 ---
@@ -273,25 +275,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-io_uring | 3932.5 | 3932.5 | 1.9 | 2.4 | 2.9 | 0.12 | 0 | 74 | 50 |
-| anyio | 3296.3 | 3296.3 | 2.1 | 3.0 | 3.4 | 0.22 | 0 | 75 | 50 |
-| asyncfiles-libuv | 3214.1 | 3214.1 | 1.9 | 2.9 | 3.1 | 0.14 | 0 | 74 | 50 |
-| aiofiles | 2538.0 | 2538.0 | 2.4 | 3.5 | 4.0 | 0.17 | 0 | 74 | 50 |
-| aiofile | 2055.2 | 2055.2 | 3.1 | 5.5 | 6.8 | 0.30 | 0 | 74 | 50 |
+| aiofile | 460.2 | 460.2 | 4.7 | 37.3 | 52.7 | 1.28 | 0 | 86 | 50 |
+| asyncfiles-io_uring | 446.8 | 446.8 | 2.9 | 41.3 | 57.3 | 0.22 | 0 | 83 | 50 |
+| asyncfiles-libuv | 438.5 | 438.5 | 2.4 | 40.9 | 54.2 | 0.32 | 0 | 83 | 50 |
+| anyio | 432.9 | 432.9 | 4.4 | 39.3 | 51.3 | 0.62 | 0 | 86 | 50 |
+| aiofiles | 410.4 | 410.4 | 3.6 | 40.7 | 52.8 | 0.49 | 0 | 86 | 50 |
 
-## 🏆 Winner: **asyncfiles-io_uring**
+## 🏆 Winner: **aiofile**
 
-- **Throughput**: 3932.5 MB/s (3932.5 ops/s)
-- **p95 Latency**: 2.4 ms
-- **CPU Time**: 0.12 s
-- **Peak Memory**: 74 MB
+- **Throughput**: 460.2 MB/s (460.2 ops/s)
+- **p95 Latency**: 37.3 ms
+- **CPU Time**: 1.28 s
+- **Peak Memory**: 86 MB
 
 ## Performance Comparison
 
-- **anyio**: 1.19x slower than asyncfiles-io_uring
-- **asyncfiles-libuv**: 1.22x slower than asyncfiles-io_uring
-- **aiofiles**: 1.55x slower than asyncfiles-io_uring
-- **aiofile**: 1.91x slower than asyncfiles-io_uring
+- **asyncfiles-io_uring**: 1.03x slower than aiofile
+- **asyncfiles-libuv**: 1.05x slower than aiofile
+- **anyio**: 1.06x slower than aiofile
+- **aiofiles**: 1.12x slower than aiofile
 
 
 ---
@@ -300,25 +302,25 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-libuv | 6066.2 | 6066.2 | 1.8 | 2.6 | 2.9 | 0.26 | 0 | 74 | 50 |
-| aiofiles | 5320.4 | 5320.4 | 2.6 | 3.4 | 3.6 | 0.26 | 0 | 88 | 50 |
-| asyncfiles-io_uring | 4614.4 | 4614.4 | 3.3 | 3.8 | 4.5 | 0.21 | 0 | 83 | 50 |
-| anyio | 4350.0 | 4350.0 | 3.1 | 4.4 | 5.3 | 0.32 | 0 | 90 | 50 |
-| aiofile | 3347.2 | 3347.2 | 3.6 | 6.3 | 7.5 | 0.40 | 0 | 88 | 50 |
+| aiofile | 445.6 | 445.6 | 9.2 | 44.5 | 59.9 | 2.53 | 0 | 97 | 50 |
+| asyncfiles-libuv | 429.0 | 429.0 | 4.6 | 55.5 | 60.3 | 0.63 | 0 | 94 | 50 |
+| aiofiles | 426.8 | 426.8 | 36.8 | 54.9 | 59.8 | 0.91 | 0 | 97 | 50 |
+| asyncfiles-io_uring | 425.2 | 425.2 | 6.2 | 56.4 | 61.4 | 0.45 | 0 | 94 | 50 |
+| anyio | 422.5 | 422.5 | 8.3 | 53.8 | 59.2 | 1.10 | 0 | 99 | 50 |
 
-## 🏆 Winner: **asyncfiles-libuv**
+## 🏆 Winner: **aiofile**
 
-- **Throughput**: 6066.2 MB/s (6066.2 ops/s)
-- **p95 Latency**: 2.6 ms
-- **CPU Time**: 0.26 s
-- **Peak Memory**: 74 MB
+- **Throughput**: 445.6 MB/s (445.6 ops/s)
+- **p95 Latency**: 44.5 ms
+- **CPU Time**: 2.53 s
+- **Peak Memory**: 97 MB
 
 ## Performance Comparison
 
-- **aiofiles**: 1.14x slower than asyncfiles-libuv
-- **asyncfiles-io_uring**: 1.31x slower than asyncfiles-libuv
-- **anyio**: 1.39x slower than asyncfiles-libuv
-- **aiofile**: 1.81x slower than asyncfiles-libuv
+- **asyncfiles-libuv**: 1.04x slower than aiofile
+- **aiofiles**: 1.04x slower than aiofile
+- **asyncfiles-io_uring**: 1.05x slower than aiofile
+- **anyio**: 1.05x slower than aiofile
 
 
 ---
@@ -327,22 +329,22 @@ Scenarios won (highest throughput) out of 12:
 
 | Implementation | MB/s | ops/s | p50 (ms) | p95 (ms) | p99 (ms) | CPU (s) | CPU throttled | Peak Memory (MB) | Iterations |
 |----------------|------|-------|----------|----------|----------|---------|---------------|------------------|------------|
-| asyncfiles-libuv | 5846.8 | 5846.8 | 3.2 | 5.3 | 5.7 | 0.54 | 0 | 122 | 50 |
-| aiofiles | 4219.3 | 4219.3 | 6.9 | 8.3 | 8.7 | 0.67 | 0 | 123 | 50 |
-| asyncfiles-io_uring | 3720.0 | 3720.0 | 8.4 | 9.0 | 9.3 | 0.51 | 0 | 122 | 50 |
-| anyio | 2981.7 | 2981.7 | 9.3 | 13.6 | 17.2 | 0.89 | 0 | 134 | 50 |
-| aiofile | 2577.5 | 2577.5 | 11.2 | 14.6 | 15.8 | 1.01 | 0 | 123 | 50 |
+| aiofile | 429.2 | 429.2 | 40.8 | 87.9 | 103.3 | 5.13 | 0 | 134 | 50 |
+| anyio | 425.0 | 425.0 | 43.7 | 102.4 | 105.0 | 2.07 | 0 | 148 | 50 |
+| aiofiles | 424.0 | 424.0 | 45.4 | 101.1 | 103.7 | 1.77 | 0 | 134 | 50 |
+| asyncfiles-libuv | 419.4 | 419.4 | 41.7 | 88.0 | 102.6 | 1.29 | 0 | 132 | 50 |
+| asyncfiles-io_uring | 417.0 | 417.0 | 43.7 | 89.6 | 105.3 | 0.92 | 0 | 131 | 50 |
 
-## 🏆 Winner: **asyncfiles-libuv**
+## 🏆 Winner: **aiofile**
 
-- **Throughput**: 5846.8 MB/s (5846.8 ops/s)
-- **p95 Latency**: 5.3 ms
-- **CPU Time**: 0.54 s
-- **Peak Memory**: 122 MB
+- **Throughput**: 429.2 MB/s (429.2 ops/s)
+- **p95 Latency**: 87.9 ms
+- **CPU Time**: 5.13 s
+- **Peak Memory**: 134 MB
 
 ## Performance Comparison
 
-- **aiofiles**: 1.39x slower than asyncfiles-libuv
-- **asyncfiles-io_uring**: 1.57x slower than asyncfiles-libuv
-- **anyio**: 1.96x slower than asyncfiles-libuv
-- **aiofile**: 2.27x slower than asyncfiles-libuv
+- **anyio**: 1.01x slower than aiofile
+- **aiofiles**: 1.01x slower than aiofile
+- **asyncfiles-libuv**: 1.02x slower than aiofile
+- **asyncfiles-io_uring**: 1.03x slower than aiofile
