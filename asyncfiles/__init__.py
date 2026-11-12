@@ -11,7 +11,7 @@ from .sendfile import SendfileProtocol, sendfile_impl, validate_sendfile_args
 from .types import OpenTextMode
 from .utils import FileMode, mode_to_posix
 
-__version__ = "1.11.0"
+__version__ = "1.11.1"
 __author__ = "Bastián García"
 __email__ = "bastiang@uc.cl"
 __all__ = [

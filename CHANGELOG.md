@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.11.1 (2026-11-12)
+
+### Bug Fixes
+
+- Prime EventLoopPump after uv_fs submissions on Windows
+  ([`e80c370`](https://github.com/cve-zh00/asyncfiles/commit/e80c370561b553a055a6c283e4cd9a53b75c332d))
+
+### Performance Improvements
+
+- Native libuv/io_uring asyncfiles.os and Cython hot-path optimizations
+  ([`59530f7`](https://github.com/cve-zh00/asyncfiles/commit/59530f7fd6713136c79005629f6a7941fd52d973))
+
+
 ## v1.11.0 (2026-11-11)
 
 ### Chores
