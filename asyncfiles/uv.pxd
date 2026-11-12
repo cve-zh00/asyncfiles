@@ -42,9 +42,59 @@ cdef extern from "uv.h" nogil:
     ctypedef struct uv_req_t:
         void*      data
 
+    ctypedef struct uv_timespec_t:
+        long tv_sec
+        long tv_nsec
+
     ctypedef struct uv_stat_t:
+        uint64_t st_dev
         uint64_t st_mode
+        uint64_t st_nlink
+        uint64_t st_uid
+        uint64_t st_gid
+        uint64_t st_rdev
+        uint64_t st_ino
         int64_t st_size
+        uint64_t st_blksize
+        uint64_t st_blocks
+        uint64_t st_flags
+        uint64_t st_gen
+        uv_timespec_t st_atim
+        uv_timespec_t st_mtim
+        uv_timespec_t st_ctim
+        uv_timespec_t st_birthtim
+
+    ctypedef struct uv_statfs_t:
+        uint64_t f_type
+        uint64_t f_bsize
+        uint64_t f_blocks
+        uint64_t f_bfree
+        uint64_t f_bavail
+        uint64_t f_files
+        uint64_t f_ffree
+        uint64_t f_spare[4]
+
+    ctypedef enum uv_dirent_type_t:
+        UV_DIRENT_UNKNOWN
+        UV_DIRENT_FILE
+        UV_DIRENT_DIR
+        UV_DIRENT_LINK
+        UV_DIRENT_FIFO
+        UV_DIRENT_SOCKET
+        UV_DIRENT_CHAR
+        UV_DIRENT_BLOCK
+
+    ctypedef struct uv_dirent_t:
+        const char* name
+        uv_dirent_type_t type
+
+    enum:
+        UV_EOF
+        UV_FS_SYMLINK_DIR
+        UV_FS_SYMLINK_JUNCTION
+        UV_FS_COPYFILE_EXCL
+        UV_FS_COPYFILE_FICLONE
+        UV_FS_COPYFILE_FICLONE_FORCE
 
     ctypedef struct uv_buf_t:
         char*  base
@@ -53,6 +103,7 @@ cdef extern from "uv.h" nogil:
     ctypedef struct uv_fs_t:
         void*       data
         uv_fs_type  fs_type
+        void*       ptr
         char*       path
         ssize_t     result
         uv_stat_t   statbuf
@@ -95,13 +146,40 @@ cdef extern from "uv.h" nogil:
                         int fd, const uv_buf_t* bufs, unsigned int nbufs,
                         int64_t offset, uv_fs_cb cb)
     int uv_fs_stat(uv_loop_t*, uv_fs_t* req,
-                        char* name_file, uv_fs_cb cb)
+                        const char* name_file, uv_fs_cb cb)
+    int uv_fs_lstat(uv_loop_t*, uv_fs_t* req,
+                        const char* path, uv_fs_cb cb)
     int uv_fs_close (uv_loop_t*, uv_fs_t* req,
                         int fd, uv_fs_cb cb)
     int uv_fs_fstat (uv_loop_t*, uv_fs_t* req,
                         int fd, uv_fs_cb cb)
     int uv_fs_ftruncate(uv_loop_t*, uv_fs_t* req,
                         int fd, int64_t offset, uv_fs_cb cb)
+    int uv_fs_unlink(uv_loop_t*, uv_fs_t* req,
+                        const char* path, uv_fs_cb cb)
+    int uv_fs_mkdir(uv_loop_t*, uv_fs_t* req,
+                        const char* path, int mode, uv_fs_cb cb)
+    int uv_fs_rmdir(uv_loop_t*, uv_fs_t* req,
+                        const char* path, uv_fs_cb cb)
+    int uv_fs_rename(uv_loop_t*, uv_fs_t* req,
+                        const char* path, const char* new_path, uv_fs_cb cb)
+    int uv_fs_link(uv_loop_t*, uv_fs_t* req,
+                        const char* path, const char* new_path, uv_fs_cb cb)
+    int uv_fs_symlink(uv_loop_t*, uv_fs_t* req,
+                        const char* path, const char* new_path, int flags, uv_fs_cb cb)
+    int uv_fs_readlink(uv_loop_t*, uv_fs_t* req,
+                        const char* path, uv_fs_cb cb)
+    int uv_fs_realpath(uv_loop_t*, uv_fs_t* req,
+                        const char* path, uv_fs_cb cb)
+    int uv_fs_access(uv_loop_t*, uv_fs_t* req,
+                        const char* path, int mode, uv_fs_cb cb)
+    int uv_fs_scandir(uv_loop_t*, uv_fs_t* req,
+                        const char* path, int flags, uv_fs_cb cb)
+    int uv_fs_scandir_next(uv_fs_t* req, uv_dirent_t* ent)
+    int uv_fs_copyfile(uv_loop_t*, uv_fs_t* req,
+                        const char* path, const char* new_path, int flags, uv_fs_cb cb)
+    int uv_fs_statfs(uv_loop_t*, uv_fs_t* req,
+                        const char* path, uv_fs_cb cb)
     void      uv_fs_req_cleanup(uv_fs_t* req)
     const char* uv_err_name(int err)
     uv_buf_t  uv_buf_init(char* base, unsigned int len)

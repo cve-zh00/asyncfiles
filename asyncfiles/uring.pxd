@@ -27,10 +27,31 @@ cdef extern from "liburing.h" nogil:
         uint32_t flags
 
 cdef extern from "<linux/stat.h>" nogil:
+    struct statx_timestamp:
+        int64_t tv_sec
+        uint32_t tv_nsec
+
     # statx struct for IORING_OP_STATX
     struct statx:
+        uint32_t stx_mask
+        uint32_t stx_blksize
+        uint64_t stx_attributes
+        uint32_t stx_nlink
+        uint32_t stx_uid
+        uint32_t stx_gid
         uint16_t stx_mode
+        uint64_t stx_ino
         uint64_t stx_size
+        uint64_t stx_blocks
+        uint64_t stx_attributes_mask
+        statx_timestamp stx_atime
+        statx_timestamp stx_btime
+        statx_timestamp stx_ctime
+        statx_timestamp stx_mtime
+        uint32_t stx_rdev_major
+        uint32_t stx_rdev_minor
+        uint32_t stx_dev_major
+        uint32_t stx_dev_minor
 
 cdef extern from "liburing.h" nogil:
     # Queue lifecycle
@@ -66,6 +87,18 @@ cdef extern from "liburing.h" nogil:
     void io_uring_prep_statx(io_uring_sqe* sqe, int dfd, const char* path,
                              int flags, unsigned int mask, statx* statxbuf)
     void io_uring_prep_ftruncate(io_uring_sqe* sqe, int fd, int64_t len)
+    void io_uring_prep_unlinkat(io_uring_sqe* sqe, int dfd, const char* path,
+                                int flags)
+    void io_uring_prep_mkdirat(io_uring_sqe* sqe, int dfd, const char* path,
+                               unsigned int mode)
+    void io_uring_prep_renameat(io_uring_sqe* sqe, int olddfd,
+                                const char* oldpath, int newdfd,
+                                const char* newpath, unsigned int flags)
+    void io_uring_prep_symlinkat(io_uring_sqe* sqe, const char* target,
+                                 int newdirfd, const char* linkpath)
+    void io_uring_prep_linkat(io_uring_sqe* sqe, int olddfd,
+                              const char* oldpath, int newdfd,
+                              const char* newpath, int flags)
 
 cdef extern from "liburing.h" nogil:
     enum:

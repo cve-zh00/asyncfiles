@@ -4,12 +4,84 @@
 # cython: wraparound=False
 
 from .uring cimport *
-from libc.stdint cimport uint64_t, int32_t, uintptr_t
+from libc.stdint cimport uint64_t, int32_t, int64_t, uintptr_t
 from libc.string cimport memset
 from libc.stdlib cimport free
+from cpython.bytes cimport PyBytes_CheckExact, PyBytes_GET_SIZE
 from cpython.ref cimport Py_INCREF, Py_DECREF
 from cpython.long cimport PyLong_FromVoidPtr, PyLong_AsVoidPtr
 import os
+
+cdef object _stat_result_cls = os.stat_result
+
+
+cdef inline object _statx_to_stat_result(statx* stx):
+    cdef uint64_t st_dev = (
+        ((<uint64_t>stx.stx_dev_major & 0xFFFFF000ULL) << 32)
+        | ((<uint64_t>stx.stx_dev_major & 0xFFFULL) << 8)
+        | ((<uint64_t>stx.stx_dev_minor & 0xFFFFFF00ULL) << 12)
+        | (<uint64_t>stx.stx_dev_minor & 0xFFULL)
+    )
+    cdef int64_t atime_ns = (<int64_t>stx.stx_atime.tv_sec) * 1000000000LL + <int64_t>stx.stx_atime.tv_nsec
+    cdef int64_t mtime_ns = (<int64_t>stx.stx_mtime.tv_sec) * 1000000000LL + <int64_t>stx.stx_mtime.tv_nsec
+    cdef int64_t ctime_ns = (<int64_t>stx.stx_ctime.tv_sec) * 1000000000LL + <int64_t>stx.stx_ctime.tv_nsec
+    return _stat_result_cls(
+        (
+            stx.stx_mode,
+            stx.stx_ino,
+            st_dev,
+            stx.stx_nlink,
+            stx.stx_uid,
+            stx.stx_gid,
+            <int64_t>stx.stx_size,
+            stx.stx_atime.tv_sec,
+            stx.stx_mtime.tv_sec,
+            stx.stx_ctime.tv_sec,
+        ),
+        {
+            "st_atime": stx.stx_atime.tv_sec + stx.stx_atime.tv_nsec * 1e-9,
+            "st_mtime": stx.stx_mtime.tv_sec + stx.stx_mtime.tv_nsec * 1e-9,
+            "st_ctime": stx.stx_ctime.tv_sec + stx.stx_ctime.tv_nsec * 1e-9,
+            "st_atime_ns": atime_ns,
+            "st_mtime_ns": mtime_ns,
+            "st_ctime_ns": ctime_ns,
+        },
+    )
+
+
+cdef void _resolve_statx_query(object future, statx* stx, int32_t res, int query_kind):
+    if future.cancelled():
+        return
+    # query_kind:
+    # 1 = full os.stat_result
+    # 2 = exists / lexists (bool)
+    # 3 = isfile (bool)
+    # 4 = isdir (bool)
+    # 5 = islink (bool)
+    # 6 = getsize (int)
+    # 7 = getmtime (float)
+    # 8 = getatime (float)
+    # 9 = getctime (float)
+    if query_kind == 2:
+        future.set_result(res >= 0)
+    elif query_kind == 3:
+        future.set_result(res >= 0 and (stx.stx_mode & 0o170000) == 0o100000)
+    elif query_kind == 4:
+        future.set_result(res >= 0 and (stx.stx_mode & 0o170000) == 0o040000)
+    elif query_kind == 5:
+        future.set_result(res >= 0 and (stx.stx_mode & 0o170000) == 0o120000)
+    elif res < 0:
+        future.set_exception(OSError(-res, os.strerror(-res)))
+    elif query_kind == 1:
+        future.set_result(_statx_to_stat_result(stx))
+    elif query_kind == 6:
+        future.set_result(<int64_t>stx.stx_size)
+    elif query_kind == 7:
+        future.set_result(stx.stx_mtime.tv_sec + stx.stx_mtime.tv_nsec * 1e-9)
+    elif query_kind == 8:
+        future.set_result(stx.stx_atime.tv_sec + stx.stx_atime.tv_nsec * 1e-9)
+    elif query_kind == 9:
+        future.set_result(stx.stx_ctime.tv_sec + stx.stx_ctime.tv_nsec * 1e-9)
 
 cdef extern from "sys/eventfd.h" nogil:
     int eventfd(unsigned int initval, int flags)
@@ -19,6 +91,24 @@ cdef extern from "sys/eventfd.h" nogil:
 cdef extern from "unistd.h" nogil:
     int close(int fd)
     ssize_t read(int fd, void* buf, size_t count)
+
+cdef extern from * nogil:
+    """
+    #if defined(__GLIBC__)
+    #include <malloc.h>
+    static inline void _asyncfiles_tune_uring_malloc(void) {
+        static int _tuned = 0;
+        if (!_tuned) {
+            _tuned = 1;
+            mallopt(M_TRIM_THRESHOLD, 64 * 1024 * 1024);
+            mallopt(M_MMAP_THRESHOLD, 32 * 1024 * 1024);
+        }
+    }
+    #else
+    static inline void _asyncfiles_tune_uring_malloc(void) {}
+    #endif
+    """
+    void _asyncfiles_tune_uring_malloc() noexcept nogil
 
 # Singleton registry: one IOUringPump per asyncio event loop
 cdef dict _uring_pump_registry = {}
@@ -116,6 +206,7 @@ cdef class IOUringPump:
         pump._next_ud = 1
 
         # Initialize io_uring
+        _asyncfiles_tune_uring_malloc()
         ret = io_uring_queue_init(queue_depth, &pump.ring, 0)
         if ret < 0:
             raise OSError(-ret, "io_uring_queue_init failed")
@@ -233,22 +324,39 @@ cdef class IOUringPump:
             if entry is None:
                 continue
 
-            # Handle statx case: entry is (future, stx_ptr_as_PyLong)
+            # Handle tuple cases:
+            # - (future, py_buf) for zero-copy single-SQE read
+            # - (future, stx_ptr_as_PyLong[, query_kind]) for statx
             if isinstance(entry, tuple):
                 future = entry[0]
+                if len(entry) == 2 and PyBytes_CheckExact(entry[1]):
+                    if not future.cancelled():
+                        if res < 0:
+                            future.set_exception(OSError(-res, "io_uring operation failed"))
+                        elif res == 0:
+                            future.set_result(b"")
+                        elif res == PyBytes_GET_SIZE(entry[1]):
+                            future.set_result(entry[1])
+                        else:
+                            future.set_result((<bytes>entry[1])[:res])
+                    continue
+
                 stx_ptr = PyLong_AsVoidPtr(entry[1])
-                if res < 0:
-                    free(stx_ptr)
-                    if not future.cancelled():
-                        future.set_exception(OSError(-res, "io_uring operation failed"))
-                elif ((<statx*>stx_ptr).stx_mode & 0o170000) == 0o040000:
-                    free(stx_ptr)
-                    if not future.cancelled():
-                        future.set_exception(OSError(21, "Is a directory"))
+                if len(entry) == 2:
+                    if res < 0:
+                        free(stx_ptr)
+                        if not future.cancelled():
+                            future.set_exception(OSError(-res, "io_uring operation failed"))
+                    elif ((<statx*>stx_ptr).stx_mode & 0o170000) == 0o040000:
+                        free(stx_ptr)
+                        if not future.cancelled():
+                            future.set_exception(OSError(21, "Is a directory"))
+                    else:
+                        if not future.cancelled():
+                            future.set_result((<statx*>stx_ptr).stx_size)
+                        free(stx_ptr)
                 else:
-                    # Resolve with file size from statx buffer
-                    if not future.cancelled():
-                        future.set_result((<statx*>stx_ptr).stx_size)
+                    _resolve_statx_query(future, <statx*>stx_ptr, res, <int>entry[2])
                     free(stx_ptr)
             else:
                 future = entry
@@ -259,20 +367,9 @@ cdef class IOUringPump:
                         future.set_result(res)
 
     cdef object submit_sqe(self, object future, uint64_t user_data):
-        """Register future and submit.
-
-        Submits immediately when the ring is idle (lowest latency for
-        sequential use); otherwise defers to the end of the tick so that
-        concurrent SQEs share a single io_uring_enter.
-        """
-        cdef bint idle = not self._pending_futures and not self._submit_scheduled
+        """Register future and schedule batched submission at end of current tick."""
         self._pending_futures[user_data] = future
-        if idle:
-            # Nothing else in flight: submit now and skip a loop iteration
-            io_uring_submit(&self.ring)
-            self._reap_completions()
-        else:
-            self.schedule_submit()
+        self.schedule_submit()
         return future
 
     cdef _stop(self, bint unregister=True):

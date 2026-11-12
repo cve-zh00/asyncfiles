@@ -1,21 +1,14 @@
 """Type stubs for asyncfiles package."""
 
 import asyncio
-from contextlib import AbstractAsyncContextManager
 import os as _os
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import (
-    AsyncIterator,
-    BinaryIO,
-    Iterable,
-    Literal,
-    Optional,
-    Union,
-    overload,
-)
+from typing import (AsyncIterator, BinaryIO, Iterable, Literal, Optional,
+                    Union, overload)
 
-from . import os as os, ospath as ospath
-
+from . import os as os
+from . import ospath as ospath
 
 PathLike = Union[str, bytes, Path, _os.PathLike[str], _os.PathLike[bytes]]
 
@@ -49,7 +42,6 @@ OpenBinaryMode = Literal[
 OpenMode = Union[OpenTextMode, OpenBinaryMode]
 
 BackendType = Literal["auto", "io_uring", "libuv"]
-
 
 class File:
     """Async file handle for I/O operations."""
@@ -91,7 +83,6 @@ class File:
     def tell(self) -> int: ...
     def __aiter__(self) -> AsyncIterator[Union[str, bytes]]: ...
 
-
 class TextFile(File):
     """Async text file handle for UTF-8 I/O operations."""
 
@@ -99,10 +90,9 @@ class TextFile(File):
     async def read(self, size: Optional[int] = -1) -> str: ...
     async def readline(self, size: Optional[int] = -1) -> str: ...
     async def readlines(self, hint: Optional[int] = -1) -> list[str]: ...
-    async def write(self, data: str) -> int: ...
-    async def writelines(self, lines: Iterable[str]) -> None: ...
+    async def write(self, data: str) -> int: ...  # type: ignore[override]
+    async def writelines(self, lines: Iterable[str]) -> None: ...  # type: ignore[override]
     def __aiter__(self) -> AsyncIterator[str]: ...
-
 
 class BinaryFile(File):
     """Async binary file handle for bytes I/O operations."""
@@ -112,14 +102,13 @@ class BinaryFile(File):
     async def readinto(self, b: Union[bytearray, memoryview]) -> int: ...
     async def readline(self, size: Optional[int] = -1) -> bytes: ...
     async def readlines(self, hint: Optional[int] = -1) -> list[bytes]: ...
-    async def write(
+    async def write(  # type: ignore[override]
         self, data: Union[bytes, bytearray, memoryview]
     ) -> int: ...
-    async def writelines(
+    async def writelines(  # type: ignore[override]
         self, lines: Iterable[Union[bytes, bytearray, memoryview]]
     ) -> None: ...
     def __aiter__(self) -> AsyncIterator[bytes]: ...
-
 
 @overload
 def open(
@@ -148,20 +137,9 @@ def open(
     *,
     backend: BackendType = "auto",
 ) -> AbstractAsyncContextManager[File]: ...
-def open(
-    path: PathLike,
-    mode: str = "r",
-    buffer_size: int = 65536,
-    loop: Optional[asyncio.AbstractEventLoop] = None,
-    *,
-    backend: BackendType = "auto",
-) -> AbstractAsyncContextManager[File]: ...
-
-
 def get_loop(
     loop: Optional[asyncio.AbstractEventLoop] = None,
 ) -> asyncio.AbstractEventLoop: ...
-
 
 class SendfileProtocol:
     def __init__(
@@ -177,10 +155,9 @@ class SendfileProtocol:
     def pause_writing(self) -> None: ...
     def resume_writing(self) -> None: ...
     def data_received(self, data: bytes) -> None: ...
-    def get_buffer(self, sizehint: int) -> object: ...
+    def get_buffer(self, sizehint: int) -> memoryview: ...
     def buffer_updated(self, nbytes: int) -> None: ...
     def eof_received(self) -> Optional[bool]: ...
-
 
 async def sendfile(
     transport: asyncio.BaseTransport,
@@ -192,8 +169,6 @@ async def sendfile(
     loop: Optional[asyncio.AbstractEventLoop] = None,
     backend: BackendType = "auto",
 ) -> int: ...
-
-
 async def sendpath(
     transport: asyncio.BaseTransport,
     path: PathLike,
@@ -204,7 +179,6 @@ async def sendpath(
     loop: Optional[asyncio.AbstractEventLoop] = None,
     backend: BackendType = "auto",
 ) -> int: ...
-
 
 __version__: str
 __all__: list[str]

@@ -91,7 +91,7 @@ async def test_write_basic(temp_file):
 
 async def test_non_existent_file_read():
     with pytest.raises(FileNotFoundError):
-        async with async_open("/nonexistent/path/file.txt", "r") as f:
+        async with async_open("/nonexistent/path/file.txt", "r"):
             pass
 
 
@@ -590,15 +590,18 @@ async def test_binary_readinto_errors_and_noncontiguous_write(temp_file):
 
     async with async_open(temp_file, "rb") as f:
         with pytest.raises((TypeError, BufferError)):
-            await f.readinto(b"readonly")
+            await f.readinto(b"readonly")  # type: ignore[arg-type]
 
     with pytest.raises(ValueError):
         await f.readinto(bytearray(4))
 
 
 async def test_asyncfiles_os_and_ospath(tmp_path):
+    import gc
+
     import asyncfiles
     import asyncfiles.os
+    from asyncfiles.event_loop import EventLoopPump
 
     src = tmp_path / "src.bin"
     dst = tmp_path / "dst.bin"
@@ -607,24 +610,111 @@ async def test_asyncfiles_os_and_ospath(tmp_path):
     src.write_bytes(b"hello-os")
     assert await asyncfiles.os.path.exists(src)
     assert await asyncfiles.os.path.isfile(src)
+    assert not await asyncfiles.os.path.isdir(src)
     assert await asyncfiles.os.path.getsize(src) == 8
+    assert await asyncfiles.os.path.getmtime(src) > 0
+    assert await asyncfiles.os.path.getatime(src) > 0
+    assert await asyncfiles.os.path.getctime(src) > 0
+    assert await asyncfiles.os.access(src, os.F_OK | os.R_OK)
+    assert not await asyncfiles.os.access(tmp_path / "missing.bin", os.F_OK)
 
     st = await asyncfiles.os.stat(src)
     assert st.st_size == 8
+    assert st.st_mtime_ns > 0
 
+    with open(src, "rb") as f1, open(src, "rb") as f2:
+        st_fd = await asyncfiles.os.stat(f1.fileno())
+        assert st_fd.st_size == 8
+        assert await asyncfiles.os.path.exists(f1.fileno())
+        assert await asyncfiles.os.path.sameopenfile(f1.fileno(), f2.fileno())
+
+    # copyfile + truncate
+    copied = tmp_path / "copied.bin"
+    await asyncfiles.os.copyfile(src, copied)
+    assert await asyncfiles.os.path.getsize(copied) == 8
+    await asyncfiles.os.truncate(copied, 3)
+    assert await asyncfiles.os.path.getsize(copied) == 3
+    with open(copied, "r+b") as cf:
+        await asyncfiles.os.truncate(cf.fileno(), 1)
+    assert await asyncfiles.os.path.getsize(copied) == 1
+    await asyncfiles.os.remove(copied)
+
+    # hardlink + symlink + readlink + lexists + lstat + samefile + realpath
+    hlink = tmp_path / "hard.bin"
+    slink = tmp_path / "sym.bin"
+    broken = tmp_path / "broken.bin"
+    await asyncfiles.os.link(src, hlink)
+    assert await asyncfiles.os.path.samefile(src, hlink)
+    await asyncfiles.os.symlink(src, slink)
+    assert await asyncfiles.os.path.islink(slink)
+    assert await asyncfiles.os.readlink(slink) == str(src)
+    assert await asyncfiles.os.readlink(os.fsencode(slink)) == os.fsencode(src)
+    lst = await asyncfiles.os.lstat(slink)
+    assert lst.st_mode != st.st_mode
+    assert await asyncfiles.os.path.realpath(slink, strict=True) == os.path.realpath(
+        src
+    )
+    assert await asyncfiles.os.path.realpath(
+        tmp_path / "nonexistent" / "leaf.txt", strict=False
+    ) == os.path.realpath(tmp_path / "nonexistent" / "leaf.txt")
+    assert await asyncfiles.os.path.abspath(src) == os.path.abspath(src)
+
+    await asyncfiles.os.symlink(tmp_path / "does_not_exist", broken)
+    assert not await asyncfiles.os.path.exists(broken)
+    assert await asyncfiles.os.path.lexists(broken)
+    assert await asyncfiles.os.access(broken, os.F_OK, follow_symlinks=False)
+    await asyncfiles.os.unlink(broken)
+    await asyncfiles.os.unlink(slink)
+    await asyncfiles.os.unlink(hlink)
+
+    # replace / rename / renames / makedirs / removedirs
     await asyncfiles.os.replace(src, dst)
     assert not await asyncfiles.os.path.exists(src)
     assert await asyncfiles.os.path.exists(dst)
 
+    nested = tmp_path / "a" / "b" / "c"
+    await asyncfiles.os.makedirs(nested, exist_ok=True)
+    await asyncfiles.os.makedirs(nested, exist_ok=True)
+    assert await asyncfiles.os.path.isdir(nested)
+    await asyncfiles.os.removedirs(nested)
+    assert not await asyncfiles.os.path.exists(tmp_path / "a")
+
+    renamed_deep = tmp_path / "x" / "y" / "moved.bin"
+    await asyncfiles.os.renames(dst, renamed_deep)
+    assert await asyncfiles.os.path.isfile(renamed_deep)
+    await asyncfiles.os.rename(renamed_deep, dst)
+    await asyncfiles.os.removedirs(tmp_path / "x" / "y")
+
+    # mkdir + listdir + scandir + statfs / statvfs
     await asyncfiles.os.mkdir(sub)
     assert await asyncfiles.os.path.isdir(sub)
     entries = await asyncfiles.os.listdir(tmp_path)
     assert "dst.bin" in entries and "subdir" in entries
+    entries_b = await asyncfiles.os.listdir(os.fsencode(tmp_path))
+    assert b"dst.bin" in entries_b
+
+    async with await asyncfiles.os.scandir(tmp_path) as it:
+        by_name = {e.name: e for e in it}
+    assert by_name["dst.bin"].is_file()
+    assert not by_name["dst.bin"].is_dir()
+    assert by_name["subdir"].is_dir()
+    assert by_name["dst.bin"].stat().st_size == 8
+    assert by_name["dst.bin"].inode() > 0
+
+    fs_info = await asyncfiles.os.statfs(tmp_path)
+    assert fs_info["f_bsize"] > 0
+    if hasattr(asyncfiles.os, "statvfs"):
+        vfs = await asyncfiles.os.statvfs(tmp_path)
+        assert vfs.f_bsize > 0
+
+    assert isinstance(await asyncfiles.os.path.ismount(tmp_path), bool)
 
     await asyncfiles.os.unlink(dst)
     await asyncfiles.os.rmdir(sub)
     assert not await asyncfiles.os.path.exists(dst)
 
+    gc.collect()
+    assert not any(isinstance(o, EventLoopPump) for o in gc.get_objects())
 
 
 async def test_text_write_large_non_ascii_temporary(temp_file):
@@ -690,6 +780,7 @@ async def test_unicode_path_roundtrip(tmp_path):
 
 async def test_open_error_does_not_leak_pump_or_fd(tmp_path):
     import gc
+
     from asyncfiles.event_loop import EventLoopPump
 
     with pytest.raises(FileNotFoundError):
@@ -711,6 +802,7 @@ async def test_open_error_does_not_leak_pump_or_fd(tmp_path):
 
 async def test_open_directory_raises_is_a_directory(tmp_path):
     import gc
+
     from asyncfiles.event_loop import EventLoopPump
 
     for mode in ("r", "rb", "w", "wb"):
@@ -963,8 +1055,8 @@ async def test_fallback_polling_stops_when_idle(temp_file):
             tick_calls += 1
         return orig_call_soon(callback, *args, **kwargs)
 
-    loop.add_reader = no_add_reader
-    loop.call_soon = counting_call_soon
+    setattr(loop, "add_reader", no_add_reader)
+    setattr(loop, "call_soon", counting_call_soon)
     try:
         async with async_open(temp_file, "r+b", backend="libuv") as f:
             before_idle = tick_calls
@@ -973,8 +1065,8 @@ async def test_fallback_polling_stops_when_idle(temp_file):
             assert await f.read() == b"hello fallback"
             assert await f.truncate(5) == 5
     finally:
-        loop.add_reader = orig_add_reader
-        loop.call_soon = orig_call_soon
+        setattr(loop, "add_reader", orig_add_reader)
+        setattr(loop, "call_soon", orig_call_soon)
 
 
 async def test_truncate_returns_new_size_and_defaults_to_offset(temp_file):
@@ -1032,7 +1124,7 @@ async def test_binary_write_rejects_non_buffer_objects(temp_file):
     async with async_open(temp_file, "wb") as f:
         for invalid in (5, "not bytes", [1, 2, 3], {"a": 1}, None):
             with pytest.raises(TypeError):
-                await f.write(invalid)
+                await f.write(invalid)  # type: ignore[arg-type]
 
 
 async def test_mode_validation_and_unsupported_operations(temp_file):
@@ -1040,7 +1132,7 @@ async def test_mode_validation_and_unsupported_operations(temp_file):
         with pytest.raises(ValueError):
             mode_to_posix(bad_mode.encode("ascii"))
         with pytest.raises(ValueError):
-            async_open(temp_file, bad_mode)  # type: ignore[arg-type]
+            async_open(temp_file, bad_mode)
 
     Path(temp_file).write_bytes(b"readonly content")
     for ro_mode, payload in (("r", "x"), ("rb", b"x")):
@@ -1069,11 +1161,10 @@ async def test_backend_resolution_and_validation(temp_file):
     with pytest.raises(ValueError, match="Invalid backend"):
         resolve_backend("invalid")
     with pytest.raises(ValueError, match="Invalid backend"):
-        async_open(temp_file, "r", backend="invalid")  # type: ignore[arg-type]
+        async_open(temp_file, "r", backend="invalid")  # type: ignore[call-overload]
 
     if sys.platform != "linux":
         with pytest.raises(OSError, match="io_uring backend is unavailable"):
             resolve_backend("io_uring")
         with pytest.raises(OSError, match="io_uring backend is unavailable"):
             async_open(temp_file, "r", backend="io_uring")
-

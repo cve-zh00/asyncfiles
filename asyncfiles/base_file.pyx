@@ -8,13 +8,26 @@ from .utils cimport FileMode, new_future, _PinnedBuffer
 from .event_loop cimport EventLoopPump, _get_or_create_pump, release_shared_pump
 from .io_operations cimport IOOperation
 from .buffer_manager cimport BufferManager
-from .file_io cimport FileReader, FileWriter
+from .file_io cimport submit_uv_read, submit_uv_readinto, submit_uv_write
 from cpython.unicode cimport PyUnicode_AsUTF8
 from libc.stdint cimport int64_t
 from collections import deque
 import errno
 import io
 import os
+
+try:
+    from .io_uring_pump import (
+        get_or_create_uring_pump as _get_or_create_uring_pump,
+        release_uring_pump as _release_uring_pump,
+    )
+    from .io_uring_operations import (
+        create_io_uring_operation as _create_io_uring_operation,
+    )
+except ImportError:
+    _get_or_create_uring_pump = None
+    _release_uring_pump = None
+    _create_io_uring_operation = None
 
 
 class _NegativeSeekError(OSError, ValueError):
@@ -38,21 +51,19 @@ cdef class BaseFile:
         self.fd = -1
         self.size = -1
         self.backend = backend
+        self._is_uring = backend == "io_uring"
         self._pump_acquired = False
         self._closed = False
         self._io_busy = False
         self._io_waiters = None
+        self.buffer_mgr = None
 
         self.offset = -1 if mode.appending else 0
 
-        if backend == "io_uring":
-            # Conditional imports to avoid errors on non-Linux platforms
-            from .io_uring_pump import get_or_create_uring_pump
-            from .io_uring_operations import create_io_uring_operation
-
-            self.uring_pump = get_or_create_uring_pump(loop)
+        if self._is_uring:
+            self.uring_pump = _get_or_create_uring_pump(loop)
             self._pump_acquired = True
-            self.io_op_uring = create_io_uring_operation(loop, self.uring_pump, self.fd, self.path)
+            self.io_op_uring = _create_io_uring_operation(loop, self.uring_pump, self.fd, self.path)
             self.pump = None
             self.io_op = None
             self.uv_loop = NULL
@@ -65,15 +76,12 @@ cdef class BaseFile:
             self.uring_pump = None
             self.io_op_uring = None
 
-        self.buffer_mgr = BufferManager(buffer_size)
-
     cdef void _release_pump(self):
         if not self._pump_acquired:
             return
         self._pump_acquired = False
-        if self.backend == "io_uring":
-            from .io_uring_pump import release_uring_pump
-            release_uring_pump(self.loop)
+        if self._is_uring:
+            _release_uring_pump(self.loop)
             self.uring_pump = None
         else:
             release_shared_pump(self.loop)
@@ -127,7 +135,7 @@ cdef class BaseFile:
     async def __aenter__(self):
         cdef int fd_to_close
         try:
-            if self.backend == "io_uring":
+            if self._is_uring:
                 if self.file_mode.readable:
                     # open + statx are linked and submitted together (1 syscall)
                     open_future, stat_future = self.io_op_uring.py_open_and_stat(self.flags)
@@ -160,7 +168,7 @@ cdef class BaseFile:
             if self.fd >= 0:
                 fd_to_close = self.fd
                 self.fd = -1
-                if self.backend == "io_uring":
+                if self._is_uring:
                     self.io_op_uring.fd = -1
                 else:
                     self.io_op.fd = -1
@@ -178,7 +186,7 @@ cdef class BaseFile:
         self._closed = True
         try:
             if self.fd >= 0:
-                if self.backend == "io_uring":
+                if self._is_uring:
                     await self.io_op_uring.py_close_file()
                     self.io_op_uring.fd = -1
                 else:
@@ -215,7 +223,7 @@ cdef class BaseFile:
                 if target_length < 0:
                     target_length = self.size if self.size >= 0 else 0
 
-            if self.backend == "io_uring":
+            if self._is_uring:
                 await self.io_op_uring.py_truncate_file(target_length)
             else:
                 trunc_future = self.io_op.truncate_file(target_length)
@@ -261,80 +269,37 @@ cdef class BaseFile:
     cdef object _read_internal(self, Py_ssize_t length=-1, int64_t read_offset=-1):
         if self._closed:
             raise ValueError("I/O operation on closed file")
-        cdef FileReader uv_reader
         cdef int64_t eff_offset = self.offset if read_offset < 0 else read_offset
 
-        if self.backend == "io_uring":
-            from .io_uring_file_io import IOUringFileReader
-            reader = IOUringFileReader(
-                self.io_op_uring,
-                self.buffer_mgr,
-                eff_offset,
-                self.size,
-                self.file_mode.binary
-            )
-            return reader.read(length)
-        else:
-            uv_reader = FileReader(
-                self.io_op,
-                self.buffer_mgr,
-                eff_offset,
-                self.size,
-                self.file_mode.binary
-            )
-            return uv_reader.read(length, self.pump)
+        if self._is_uring:
+            return self.io_op_uring.py_submit_read_bytes(length, eff_offset, self.size)
+        return submit_uv_read(
+            self.io_op,
+            eff_offset,
+            self.size,
+            self.file_mode.binary,
+            length,
+            self.pump,
+        )
 
     cdef object _readinto_internal(self, _PinnedBuffer pinned, Py_ssize_t length, int64_t read_offset=-1):
         if self._closed:
             raise ValueError("I/O operation on closed file")
-        cdef FileReader uv_reader
         cdef int64_t eff_offset = self.offset if read_offset < 0 else read_offset
 
-        if self.backend == "io_uring":
-            from .io_uring_file_io import IOUringFileReader
-            reader = IOUringFileReader(
-                self.io_op_uring,
-                self.buffer_mgr,
-                eff_offset,
-                self.size,
-                self.file_mode.binary
-            )
-            return reader.readinto(pinned, length)
-        else:
-            uv_reader = FileReader(
-                self.io_op,
-                self.buffer_mgr,
-                eff_offset,
-                self.size,
-                self.file_mode.binary
-            )
-            return uv_reader.readinto(pinned, length, self.pump)
+        if self._is_uring:
+            return self.io_op_uring.py_submit_readinto(pinned, length, eff_offset)
+        return submit_uv_readinto(self.io_op, eff_offset, pinned, length, self.pump)
 
     cdef object _write_internal(self, object bdata, int64_t write_offset=-2):
         if self._closed:
             raise ValueError("I/O operation on closed file")
-        cdef FileWriter uv_writer
-        cdef object write_future
         cdef int64_t eff_offset
         if write_offset == -2:
             eff_offset = -1 if self.file_mode.appending else self.offset
         else:
             eff_offset = write_offset
 
-        if self.backend == "io_uring":
-            from .io_uring_file_io import IOUringFileWriter
-            writer = IOUringFileWriter(
-                self.io_op_uring,
-                self.buffer_mgr,
-                eff_offset
-            )
-            return writer.write(bdata)
-        else:
-            uv_writer = FileWriter(
-                self.io_op,
-                self.buffer_mgr,
-                eff_offset
-            )
-            write_future = uv_writer.write(bdata)
-            self.pump.prime()
-            return write_future
+        if self._is_uring:
+            return self.io_op_uring.py_submit_write_data(bdata, eff_offset)
+        return submit_uv_write(self.io_op, eff_offset, bdata, self.pump)

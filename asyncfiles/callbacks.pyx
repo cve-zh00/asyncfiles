@@ -6,9 +6,15 @@ from libc.stdint      cimport int64_t
 from cpython.ref      cimport Py_INCREF, Py_DECREF
 from cpython.object   cimport PyObject
 
-from .context cimport FSOpenContext, FSReadContext, FSWriteContext
+from .context cimport FSReadContext, FSWriteContext
 
 import errno as _errno
+import os as _os
+
+cdef extern from "Python.h":
+    object PyUnicode_DecodeFSDefault(const char* s)
+
+cdef object _stat_result = _os.stat_result
 
 
 cdef object _uv_oserror(int err, str msg):
@@ -22,89 +28,346 @@ cdef object _uv_oserror(int err, str msg):
     return OSError(code if code is not None else -err, msg)
 
 
+cdef inline object _build_stat_result(const uv.uv_stat_t* st):
+    cdef int64_t atime_sec = <int64_t>st.st_atim.tv_sec
+    cdef int64_t atime_nsec = <int64_t>st.st_atim.tv_nsec
+    cdef int64_t mtime_sec = <int64_t>st.st_mtim.tv_sec
+    cdef int64_t mtime_nsec = <int64_t>st.st_mtim.tv_nsec
+    cdef int64_t ctime_sec = <int64_t>st.st_ctim.tv_sec
+    cdef int64_t ctime_nsec = <int64_t>st.st_ctim.tv_nsec
+    return _stat_result(
+        (
+            st.st_mode,
+            st.st_ino,
+            st.st_dev,
+            st.st_nlink,
+            st.st_uid,
+            st.st_gid,
+            st.st_size,
+            atime_sec,
+            mtime_sec,
+            ctime_sec,
+        ),
+        {
+            "st_atime": atime_sec + atime_nsec * 1e-9,
+            "st_mtime": mtime_sec + mtime_nsec * 1e-9,
+            "st_ctime": ctime_sec + ctime_nsec * 1e-9,
+            "st_atime_ns": atime_sec * 1000000000 + atime_nsec,
+            "st_mtime_ns": mtime_sec * 1000000000 + mtime_nsec,
+            "st_ctime_ns": ctime_sec * 1000000000 + ctime_nsec,
+        },
+    )
+
+
 cdef void cb_open(uv.uv_fs_t* req) noexcept with gil:
-    cdef FSOpenContext* ctx = <FSOpenContext*>req.data
-    cdef object future = <object>ctx.future
-    cdef int err = req.result
-    cdef int result_obj
-
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
     try:
-        if err < 0:
-            if not future.done():
-                future.set_exception(_uv_oserror(<int>err, "open failed"))
-        else:
-            result_obj = req.result
-            if not future.done():
-                future.set_result(result_obj)
-
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "open failed"))
+            else:
+                future.set_result(err)
     finally:
         uv.uv_fs_req_cleanup(req)
         free(req)
-        free(ctx)
         Py_DECREF(future)
+
 
 cdef void cb_stat(uv.uv_fs_t* req) noexcept with gil:
-
-    cdef FSOpenContext* ctx = <FSOpenContext*>req.data
-    cdef object future = <object>ctx.future
-    cdef int err = req.result
-
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
     try:
-        if err < 0:
-            if not future.done():
-                future.set_exception(_uv_oserror(<int>err, "stat failed"))
-        elif (req.statbuf.st_mode & 0o170000) == 0o040000:
-            if not future.done():
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "stat failed"))
+            elif (req.statbuf.st_mode & 0o170000) == 0o040000:
                 future.set_exception(_uv_oserror(-_errno.EISDIR, "Is a directory"))
-        else:
-            if not future.done():
+            else:
                 future.set_result(req.statbuf.st_size)
-
     finally:
         uv.uv_fs_req_cleanup(req)
         free(req)
-        free(ctx)
         Py_DECREF(future)
 
+
 cdef void cb_close(uv.uv_fs_t* req) noexcept with gil:
-
-    cdef FSOpenContext* ctx = <FSOpenContext*>req.data
-    cdef object future = <object>ctx.future
-    cdef int err = req.result
-    cdef int result_obj
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
     try:
-        if err < 0:
-            if not future.done():
-                future.set_exception(_uv_oserror(<int>err, "close failed"))
-        else:
-            result_obj = req.result
-            if not future.done():
-                future.set_result(result_obj)
-
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "close failed"))
+            else:
+                future.set_result(err)
     finally:
         uv.uv_fs_req_cleanup(req)
         free(req)
-        free(ctx)
         Py_DECREF(future)
 
 
 cdef void cb_ftruncate(uv.uv_fs_t* req) noexcept with gil:
-    """Callback para operación ftruncate"""
-    cdef FSOpenContext* ctx = <FSOpenContext*>req.data
-    cdef object future = <object>ctx.future
-    cdef int err = req.result
-
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
     try:
-        if err < 0:
-            if not future.done():
-                future.set_exception(_uv_oserror(<int>err, "ftruncate failed"))
-        else:
-            if not future.done():
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "ftruncate failed"))
+            else:
                 future.set_result(0)
     finally:
         uv.uv_fs_req_cleanup(req)
         free(req)
-        free(ctx)
+        Py_DECREF(future)
+
+
+cdef void cb_ignore(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    try:
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "filesystem operation failed"))
+            else:
+                future.set_result(None)
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_full_stat(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    try:
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "stat failed"))
+            else:
+                future.set_result(_build_stat_result(&req.statbuf))
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_stat_exists(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    try:
+        if not future.done():
+            future.set_result(req.result >= 0)
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_stat_isfile(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    try:
+        if not future.done():
+            future.set_result(
+                req.result >= 0 and (req.statbuf.st_mode & 0o170000) == 0o100000
+            )
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_stat_isdir(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    try:
+        if not future.done():
+            future.set_result(
+                req.result >= 0 and (req.statbuf.st_mode & 0o170000) == 0o040000
+            )
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_stat_islink(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    try:
+        if not future.done():
+            future.set_result(
+                req.result >= 0 and (req.statbuf.st_mode & 0o170000) == 0o120000
+            )
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_stat_mtime(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    try:
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "stat failed"))
+            else:
+                future.set_result(
+                    req.statbuf.st_mtim.tv_sec + req.statbuf.st_mtim.tv_nsec * 1e-9
+                )
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_stat_atime(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    try:
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "stat failed"))
+            else:
+                future.set_result(
+                    req.statbuf.st_atim.tv_sec + req.statbuf.st_atim.tv_nsec * 1e-9
+                )
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_stat_ctime(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    try:
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "stat failed"))
+            else:
+                future.set_result(
+                    req.statbuf.st_ctim.tv_sec + req.statbuf.st_ctim.tv_nsec * 1e-9
+                )
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_access_bool(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    try:
+        if not future.done():
+            future.set_result(req.result >= 0)
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_ptr_bytes(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    cdef bytes res_bytes
+    try:
+        if not future.done():
+            if err < 0 or req.ptr == NULL:
+                future.set_exception(_uv_oserror(err if err < 0 else -5, "path operation failed"))
+            else:
+                res_bytes = <bytes>(<const char*>req.ptr)
+                future.set_result(res_bytes)
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_scandir_names_str(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    cdef uv.uv_dirent_t ent
+    cdef list names
+    try:
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "scandir failed"))
+            else:
+                names = []
+                while uv.uv_fs_scandir_next(req, &ent) != uv.UV_EOF:
+                    names.append(PyUnicode_DecodeFSDefault(ent.name))
+                future.set_result(names)
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_scandir_names_bytes(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    cdef uv.uv_dirent_t ent
+    cdef list names
+    cdef bytes name_b
+    try:
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "scandir failed"))
+            else:
+                names = []
+                while uv.uv_fs_scandir_next(req, &ent) != uv.UV_EOF:
+                    name_b = <bytes>ent.name
+                    names.append(name_b)
+                future.set_result(names)
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_scandir_entries(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    cdef uv.uv_dirent_t ent
+    cdef list entries
+    cdef bytes name_b
+    try:
+        if not future.done():
+            if err < 0:
+                future.set_exception(_uv_oserror(err, "scandir failed"))
+            else:
+                entries = []
+                while uv.uv_fs_scandir_next(req, &ent) != uv.UV_EOF:
+                    name_b = <bytes>ent.name
+                    entries.append((name_b, <int>ent.type))
+                future.set_result(entries)
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        Py_DECREF(future)
+
+
+cdef void cb_statfs(uv.uv_fs_t* req) noexcept with gil:
+    cdef object future = <object>req.data
+    cdef int err = <int>req.result
+    cdef uv.uv_statfs_t* st
+    try:
+        if not future.done():
+            if err < 0 or req.ptr == NULL:
+                future.set_exception(_uv_oserror(err if err < 0 else -5, "statfs failed"))
+            else:
+                st = <uv.uv_statfs_t*>req.ptr
+                future.set_result(
+                    {
+                        "f_type": st.f_type,
+                        "f_bsize": st.f_bsize,
+                        "f_blocks": st.f_blocks,
+                        "f_bfree": st.f_bfree,
+                        "f_bavail": st.f_bavail,
+                        "f_files": st.f_files,
+                        "f_ffree": st.f_ffree,
+                    }
+                )
+    finally:
+        uv.uv_fs_req_cleanup(req)
+        free(req)
         Py_DECREF(future)
 
 
@@ -158,35 +421,68 @@ cdef class _ReadResult:
 
 
 cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
-    """Minimal callback - just capture result and schedule processing"""
+    """Resolve read future directly with zero-copy bytes and free context."""
     cdef:
         FSReadContext* ctx = <FSReadContext*>req.data
         Py_ssize_t result = req.result
+        Py_ssize_t requested_size = ctx.requested_size
         object future = <object>ctx.future
-        _ReadResult wrapper
+        bytes py_buf
+        bytes res_obj
 
     try:
-        if result < 0:
-            if not future.done():
+        if not future.done():
+            if result < 0:
                 future.set_exception(_uv_oserror(<int>result, "read failed"))
-            # Free ctx on error path since no _ReadResult will own it
-            if ctx.buffer_mem != NULL:
-                free(ctx.buffer_mem)
-            if ctx.py_buf != NULL:
-                Py_DECREF(<object>ctx.py_buf)
-            if ctx.bufs != NULL:
-                free(ctx.bufs)
-            Py_DECREF(future)
-            free(ctx)
-        else:
-            # Create wrapper to pass context to post-processor
-            # _ReadResult now owns ctx and will free it in __dealloc__
-            # if _process_read_result doesn't consume it first
-            wrapper = _ReadResult()
-            wrapper.ctx = ctx
-            wrapper.bytes_read = result
-            if not future.done():
-                future.set_result(wrapper)
+            else:
+                if requested_size > 0 and result > requested_size:
+                    result = requested_size
+                if result <= 0 or ctx.py_buf == NULL:
+                    res_obj = b""
+                else:
+                    py_buf = <bytes>ctx.py_buf
+                    if result == requested_size:
+                        res_obj = py_buf
+                    else:
+                        res_obj = py_buf[:result]
+                future.set_result(res_obj)
     finally:
+        if ctx.buffer_mem != NULL:
+            free(ctx.buffer_mem)
+        if ctx.py_buf != NULL:
+            Py_DECREF(<object>ctx.py_buf)
+        if ctx.bufs != NULL:
+            free(ctx.bufs)
         uv.uv_fs_req_cleanup(req)
         free(req)
+        free(ctx)
+        Py_DECREF(future)
+
+
+cdef void cb_readinto(uv.uv_fs_t* req) noexcept with gil:
+    """Resolve readinto future directly with byte count and free context."""
+    cdef:
+        FSReadContext* ctx = <FSReadContext*>req.data
+        Py_ssize_t result = req.result
+        Py_ssize_t requested_size = ctx.requested_size
+        object future = <object>ctx.future
+
+    try:
+        if not future.done():
+            if result < 0:
+                future.set_exception(_uv_oserror(<int>result, "read failed"))
+            else:
+                if requested_size > 0 and result > requested_size:
+                    result = requested_size
+                future.set_result(result if result > 0 else 0)
+    finally:
+        if ctx.buffer_mem != NULL:
+            free(ctx.buffer_mem)
+        if ctx.py_buf != NULL:
+            Py_DECREF(<object>ctx.py_buf)
+        if ctx.bufs != NULL:
+            free(ctx.bufs)
+        uv.uv_fs_req_cleanup(req)
+        free(req)
+        free(ctx)
+        Py_DECREF(future)

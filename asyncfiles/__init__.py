@@ -1,6 +1,6 @@
 import asyncio
-from functools import lru_cache
 import os as _os
+from functools import lru_cache
 from pathlib import Path
 from typing import BinaryIO, Literal, Optional, Union
 
@@ -10,7 +10,6 @@ from .files import BinaryFile, TextFile
 from .sendfile import SendfileProtocol, sendfile_impl, validate_sendfile_args
 from .types import OpenTextMode
 from .utils import FileMode, mode_to_posix
-
 
 __version__ = "1.11.0"
 __author__ = "Bastián García"

@@ -23,6 +23,7 @@ cdef class BaseFile:
         str backend
         object uring_pump
         object io_op_uring
+        bint _is_uring
         bint _pump_acquired
         bint _closed
         bint _io_busy

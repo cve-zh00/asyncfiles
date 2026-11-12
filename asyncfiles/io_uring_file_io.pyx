@@ -6,7 +6,12 @@
 from .io_uring_operations cimport IOUringOperation
 from .buffer_manager cimport BufferManager
 from .utils cimport _PinnedBuffer
-from cpython.bytes cimport PyBytes_FromStringAndSize, PyBytes_AS_STRING, PyBytes_GET_SIZE
+from cpython.bytes cimport (
+    PyBytes_CheckExact,
+    PyBytes_FromStringAndSize,
+    PyBytes_AS_STRING,
+    PyBytes_GET_SIZE,
+)
 from cpython.ref cimport Py_INCREF, Py_DECREF
 from cpython.unicode cimport PyUnicode_Check, PyUnicode_AsUTF8AndSize
 from libc.stdint cimport int64_t
@@ -62,6 +67,8 @@ cdef class IOUringFileReader:
             Py_ssize_t pos
             Py_ssize_t n
             Py_ssize_t base_addr
+            char* base
+            int res
             bytes py_buf
             list tasks
 
@@ -73,10 +80,19 @@ cdef class IOUringFileReader:
         if py_buf is None:
             raise MemoryError()
 
-        base_addr = <Py_ssize_t><size_t>PyBytes_AS_STRING(py_buf)
+        base = PyBytes_AS_STRING(py_buf)
         if total < PARALLEL_THRESHOLD:
-            got = await self._read_chunk(py_buf, base_addr, 0, total, self.offset)
+            got = 0
+            while got < total:
+                res = await self.io_op.read(
+                    base + got, <unsigned int>(total - got),
+                    self.offset + got, py_buf
+                )
+                if res <= 0:
+                    break
+                got += res
         else:
+            base_addr = <Py_ssize_t><size_t>base
             tasks = []
             pos = 0
             while pos < total:
@@ -103,15 +119,26 @@ cdef class IOUringFileReader:
             Py_ssize_t pos
             Py_ssize_t n
             Py_ssize_t base_addr
+            char* base
+            int res
             list tasks
 
         if total <= 0:
             return 0
 
-        base_addr = <Py_ssize_t><size_t>pinned.view.buf
+        base = <char*>pinned.view.buf
         if total < PARALLEL_THRESHOLD:
-            got = await self._read_chunk(pinned, base_addr, 0, total, self.offset)
+            got = 0
+            while got < total:
+                res = await self.io_op.read(
+                    base + got, <unsigned int>(total - got),
+                    self.offset + got, pinned
+                )
+                if res <= 0:
+                    break
+                got += res
         else:
+            base_addr = <Py_ssize_t><size_t>base
             tasks = []
             pos = 0
             while pos < total:
@@ -157,16 +184,22 @@ cdef class IOUringFileWriter:
         return done
 
     async def write(self, object bdata):
-        """Zero-copy write from a bytes/str buffer (pinned by the pump)."""
+        """Zero-copy write from a bytes/str/buffer (pinned by the pump)."""
         cdef:
             Py_ssize_t total_bytes
             const char* base
             Py_ssize_t base_addr
+            Py_ssize_t done
             Py_ssize_t pos
             Py_ssize_t n
+            int64_t off
+            int put
             list tasks
 
-        if PyUnicode_Check(bdata):
+        if PyBytes_CheckExact(bdata):
+            total_bytes = PyBytes_GET_SIZE(bdata)
+            base = PyBytes_AS_STRING(bdata)
+        elif PyUnicode_Check(bdata):
             base = PyUnicode_AsUTF8AndSize(bdata, &total_bytes)
         elif isinstance(bdata, _PinnedBuffer):
             total_bytes = (<_PinnedBuffer>bdata).view.len
@@ -174,15 +207,25 @@ cdef class IOUringFileWriter:
         else:
             total_bytes = PyBytes_GET_SIZE(bdata)
             base = PyBytes_AS_STRING(bdata)
-        base_addr = <Py_ssize_t><size_t>base
 
         if total_bytes == 0:
             return 0
 
         # offset < 0 means O_APPEND: must stay a single, ordered write
         if self.offset < 0 or total_bytes < PARALLEL_THRESHOLD:
-            return await self._write_chunk(bdata, base_addr, 0, total_bytes, self.offset)
+            done = 0
+            while done < total_bytes:
+                off = -1 if self.offset < 0 else self.offset + done
+                put = await self.io_op.write(
+                    base + done, <unsigned int>(total_bytes - done),
+                    off, bdata
+                )
+                if put <= 0:
+                    raise OSError(5, "io_uring write made no progress")
+                done += put
+            return done
 
+        base_addr = <Py_ssize_t><size_t>base
         tasks = []
         pos = 0
         while pos < total_bytes:

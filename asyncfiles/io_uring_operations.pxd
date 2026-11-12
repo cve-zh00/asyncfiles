@@ -20,3 +20,6 @@ cdef class IOUringOperation:
     cdef object get_stat(self)
     cdef tuple open_and_stat(self, int flags)
     cdef object truncate_file(self, int64_t length)
+    cdef object submit_read_bytes(self, Py_ssize_t length, int64_t offset, int64_t size)
+    cdef object submit_readinto(self, object pinned, Py_ssize_t total, int64_t offset)
+    cdef object submit_write_data(self, object bdata, int64_t offset)

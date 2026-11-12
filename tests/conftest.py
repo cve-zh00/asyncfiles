@@ -1,8 +1,3 @@
-import asyncio
-import os
-import tempfile
-from pathlib import Path
-
 import pytest
 
 
@@ -35,9 +30,7 @@ def backend(request, monkeypatch):
         backend_module,
         "resolve_backend",
         lambda requested: (
-            request.param
-            if requested == "auto"
-            else real_resolve_backend(requested)
+            request.param if requested == "auto" else real_resolve_backend(requested)
         ),
     )
     return request.param

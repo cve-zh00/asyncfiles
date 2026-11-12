@@ -4,7 +4,7 @@
 # cython: wraparound=False
 
 from . cimport uv
-from .callbacks cimport cb_read, cb_write, _ReadResult
+from .callbacks cimport cb_read, cb_readinto, cb_write, _ReadResult, _uv_oserror
 from .context cimport FSReadContext, FSWriteContext
 from .cpython cimport PyObject
 from .event_loop cimport EventLoopPump
@@ -14,104 +14,254 @@ from .buffer_manager cimport BufferManager
 from .memory_utils cimport _cleanup_read_context, _cleanup_write_context
 from libc.stdlib cimport malloc, free
 from libc.stdint cimport int64_t
-from libc.string cimport memcpy
-from cpython.bytes cimport PyBytes_GET_SIZE, PyBytes_AsString, PyBytes_FromStringAndSize, PyBytes_AS_STRING
+from cpython.bytes cimport (
+    PyBytes_CheckExact,
+    PyBytes_GET_SIZE,
+    PyBytes_AsString,
+    PyBytes_FromStringAndSize,
+    PyBytes_AS_STRING,
+)
 from cpython.unicode cimport PyUnicode_Check, PyUnicode_AsUTF8AndSize
 from cpython.ref cimport Py_INCREF, Py_DECREF
 cimport cython
 
-cdef enum:
-    __PREALLOCED_BUFS = 16
+DEF _MAX_SINGLE_UV_BUF = 0x7ffff000
 
 
-cdef inline bytes _process_read_result(_ReadResult wrapper) noexcept:
-    """Process read result after callback - all logic here"""
+@cython.cdivision(True)
+cdef inline object _submit_uv_read_buf(
+    IOOperation io_op,
+    int64_t offset,
+    bint binary,
+    char* chunk_ptr,
+    Py_ssize_t total,
+    object keep_obj,
+    uv.uv_fs_cb cb,
+):
     cdef:
-        FSReadContext* ctx = wrapper.ctx
-        Py_ssize_t actual_size = wrapper.bytes_read
-        Py_ssize_t requested_size = ctx.requested_size
-        bytes py_bytes
-        char* dest
-        Py_ssize_t chunk_len, i, offset
-        bytes result_obj
-        object py_buf_obj
+        object future = new_future(io_op.loop)
+        int err
+        FSReadContext* ctx
+        uv.uv_fs_t* req
+        uv.uv_buf_t stack_buf
+        uv.uv_buf_t* p_uvbufs
+        Py_ssize_t nbufs, i, chunk_len
+        Py_ssize_t chunk_size = _MAX_SINGLE_UV_BUF
+
+    ctx = <FSReadContext*>malloc(sizeof(FSReadContext))
+    if ctx == NULL:
+        future.set_exception(MemoryError())
+        return future
+
+    ctx.future = <PyObject*>future
+    ctx.binary = binary
+    ctx.requested_size = total
+    ctx.buffer_mem = NULL
+
+    if total <= _MAX_SINGLE_UV_BUF:
+        nbufs = 1
+        ctx.nbufs = 1
+        ctx.bufs = NULL
+        stack_buf = uv.uv_buf_init(chunk_ptr, <unsigned int>total)
+        p_uvbufs = &stack_buf
+    else:
+        nbufs = (total + chunk_size - 1) // chunk_size
+        ctx.nbufs = nbufs
+        ctx.bufs = <uv.uv_buf_t*>malloc(nbufs * sizeof(uv.uv_buf_t))
+        if ctx.bufs == NULL:
+            free(ctx)
+            future.set_exception(MemoryError())
+            return future
+        p_uvbufs = ctx.bufs
+        for i in range(nbufs):
+            chunk_len = chunk_size if i < nbufs - 1 else total - chunk_size * (nbufs - 1)
+            p_uvbufs[i] = uv.uv_buf_init(
+                chunk_ptr + (i * chunk_size), <unsigned int>chunk_len
+            )
+
+    Py_INCREF(keep_obj)
+    ctx.py_buf = <PyObject*>keep_obj
+    Py_INCREF(future)
+
+    req = <uv.uv_fs_t*>malloc(sizeof(uv.uv_fs_t))
+    if req == NULL:
+        if ctx.bufs != NULL:
+            free(ctx.bufs)
+        Py_DECREF(keep_obj)
+        free(ctx)
+        Py_DECREF(future)
+        future.set_exception(MemoryError())
+        return future
+
+    req.data = <void*>ctx
+
+    err = uv.uv_fs_read(
+        io_op.uv_loop,
+        req,
+        io_op.fd,
+        p_uvbufs,
+        <unsigned int>nbufs,
+        offset,
+        cb,
+    )
+
+    if err < 0:
+        if ctx.bufs != NULL:
+            free(ctx.bufs)
+        Py_DECREF(keep_obj)
+        free(ctx)
+        free(req)
+        Py_DECREF(future)
+        future.set_exception(_uv_oserror(err, "read failed"))
+        return future
+
+    return future
+
+
+cdef object submit_uv_read(
+    IOOperation io_op,
+    int64_t offset,
+    int64_t size,
+    bint binary,
+    Py_ssize_t length,
+    EventLoopPump pump,
+):
+    cdef:
+        object future
+        Py_ssize_t total = length if length >= 0 else max(0, size - offset)
+        bytes py_buf
+
+    if total <= 0:
+        future = new_future(io_op.loop)
+        future.set_result(b"")
+        return future
+
+    py_buf = PyBytes_FromStringAndSize(NULL, total)
+    if py_buf is None:
+        future = new_future(io_op.loop)
+        future.set_exception(MemoryError())
+        return future
+
+    future = _submit_uv_read_buf(
+        io_op, offset, binary, PyBytes_AS_STRING(py_buf), total, py_buf, cb_read
+    )
+    if pump is not None:
+        pump.prime()
+    return future
+
+
+cdef object submit_uv_readinto(
+    IOOperation io_op,
+    int64_t offset,
+    _PinnedBuffer pinned,
+    Py_ssize_t total,
+    EventLoopPump pump,
+):
+    cdef object future
+    if total <= 0:
+        future = new_future(io_op.loop)
+        future.set_result(0)
+        return future
+
+    future = _submit_uv_read_buf(
+        io_op, offset, True, <char*>pinned.view.buf, total, pinned, cb_readinto
+    )
+    if pump is not None:
+        pump.prime()
+    return future
+
+
+@cython.cdivision(True)
+cdef object submit_uv_write(
+    IOOperation io_op,
+    int64_t offset,
+    object bdata,
+    EventLoopPump pump,
+):
+    cdef:
+        object future = new_future(io_op.loop)
+        char* base_ptr
+        Py_ssize_t total_bytes
+        FSWriteContext* ctx
+        uv.uv_buf_t stack_buf
+        uv.uv_buf_t* p_uvbufs
+        Py_ssize_t nbufs, i, chunk_len
+        Py_ssize_t chunk_size = _MAX_SINGLE_UV_BUF
+        int err
+        uv.uv_fs_t* req
 
     try:
-        # Clamp to requested size
-        if requested_size > 0 and actual_size > requested_size:
-            actual_size = requested_size
-
-        # Handle empty read
-        if actual_size <= 0:
-            result_obj = b""
-        # Zero-copy path: py_buf holds the bytes object libuv wrote into
-        elif ctx.py_buf != NULL:
-            py_buf_obj = <object>ctx.py_buf
-            if actual_size == requested_size:
-                # Full read — return the bytes object directly (zero copy!)
-                result_obj = <bytes>py_buf_obj
-            else:
-                # Partial read — need to slice (still one less copy than before)
-                result_obj = (<bytes>py_buf_obj)[:actual_size]
-        # Legacy path (buffer_mem): single buffer optimization
-        elif ctx.nbufs == 1 and ctx.bufs != NULL:
-            result_obj = PyBytes_FromStringAndSize(ctx.bufs[0].base, actual_size)
-        # Legacy path: multiple buffers - copy and merge
-        elif ctx.bufs != NULL:
-            py_bytes = PyBytes_FromStringAndSize(NULL, actual_size)
-            dest = PyBytes_AS_STRING(py_bytes)
-            offset = 0
-            for i in range(ctx.nbufs):
-                if offset >= actual_size:
-                    break
-                chunk_len = ctx.bufs[i].len
-                if chunk_len > actual_size - offset:
-                    chunk_len = actual_size - offset
-                memcpy(dest + offset, ctx.bufs[i].base, chunk_len)
-                offset += chunk_len
-            result_obj = py_bytes
+        if PyBytes_CheckExact(bdata):
+            total_bytes = PyBytes_GET_SIZE(bdata)
+            base_ptr = PyBytes_AS_STRING(bdata)
+        elif PyUnicode_Check(bdata):
+            base_ptr = <char*>PyUnicode_AsUTF8AndSize(bdata, &total_bytes)
+        elif isinstance(bdata, _PinnedBuffer):
+            total_bytes = (<_PinnedBuffer>bdata).view.len
+            base_ptr = <char*>(<_PinnedBuffer>bdata).view.buf
         else:
-            result_obj = b""
+            total_bytes = PyBytes_GET_SIZE(bdata)
+            base_ptr = PyBytes_AsString(bdata)
+    except Exception as exc:
+        future.set_exception(exc)
+        return future
 
-        return result_obj
-    finally:
-        # Cleanup context and mark as consumed so __dealloc__ won't double-free
-        if ctx.buffer_mem != NULL:
-            free(ctx.buffer_mem)
-        if ctx.py_buf != NULL:
-            Py_DECREF(<object>ctx.py_buf)
-        if ctx.bufs != NULL:
-            free(ctx.bufs)
-        if ctx.future != NULL:
-            Py_DECREF(<object>ctx.future)
-        free(ctx)
-        wrapper.ctx = NULL
+    if total_bytes == 0:
+        future.set_result(0)
+        return future
 
+    ctx = <FSWriteContext*>malloc(sizeof(FSWriteContext))
+    if ctx == NULL:
+        future.set_exception(MemoryError())
+        return future
 
-cdef inline Py_ssize_t _process_readinto_result(_ReadResult wrapper) noexcept:
-    """Process readinto result after callback - buffer was filled in place."""
-    cdef:
-        FSReadContext* ctx = wrapper.ctx
-        Py_ssize_t actual_size = wrapper.bytes_read
-        Py_ssize_t requested_size = ctx.requested_size
+    if total_bytes <= _MAX_SINGLE_UV_BUF:
+        nbufs = 1
+        ctx.nbufs = 1
+        ctx.bufs = NULL
+        stack_buf = uv.uv_buf_init(base_ptr, <unsigned int>total_bytes)
+        p_uvbufs = &stack_buf
+    else:
+        nbufs = (total_bytes + chunk_size - 1) // chunk_size
+        ctx.nbufs = nbufs
+        ctx.bufs = <uv.uv_buf_t*>malloc(nbufs * sizeof(uv.uv_buf_t))
+        if ctx.bufs == NULL:
+            free(ctx)
+            future.set_exception(MemoryError())
+            return future
+        p_uvbufs = ctx.bufs
+        for i in range(nbufs):
+            chunk_len = chunk_size if i < nbufs - 1 else total_bytes - chunk_size * (nbufs - 1)
+            p_uvbufs[i] = uv.uv_buf_init(
+                base_ptr + (i * chunk_size), <unsigned int>chunk_len
+            )
 
-    try:
-        if requested_size > 0 and actual_size > requested_size:
-            actual_size = requested_size
-        if actual_size <= 0:
-            return 0
-        return actual_size
-    finally:
-        if ctx.buffer_mem != NULL:
-            free(ctx.buffer_mem)
-        if ctx.py_buf != NULL:
-            Py_DECREF(<object>ctx.py_buf)
-        if ctx.bufs != NULL:
-            free(ctx.bufs)
-        if ctx.future != NULL:
-            Py_DECREF(<object>ctx.future)
-        free(ctx)
-        wrapper.ctx = NULL
+    ctx.future = <PyObject*>future
+    ctx._refs = <PyObject*>bdata
+
+    Py_INCREF(bdata)
+    Py_INCREF(future)
+
+    req = <uv.uv_fs_t*>malloc(sizeof(uv.uv_fs_t))
+    if req == NULL:
+        _cleanup_write_context(ctx, NULL, future, bdata)
+        future.set_exception(MemoryError())
+        return future
+
+    req.data = <void*>ctx
+
+    err = uv.uv_fs_write(
+        io_op.uv_loop, req, io_op.fd, p_uvbufs, <unsigned int>nbufs, offset, cb_write
+    )
+
+    if err < 0:
+        _cleanup_write_context(ctx, req, future, bdata)
+        future.set_exception(_uv_oserror(err, "write failed"))
+        return future
+
+    if pump is not None:
+        pump.prime()
+    return future
 
 
 cdef class FileReader:
@@ -122,268 +272,40 @@ cdef class FileReader:
         self.size = size
         self.binary = binary
 
-    @cython.cdivision(True)
-    async def read(self, Py_ssize_t length=-1, EventLoopPump pump=None):
-        """Read with post-callback processing"""
-        cdef:
-            object read_future
-            object future_result
-            _ReadResult wrapper
-            bytes result
+    @staticmethod
+    cdef FileReader create(
+        IOOperation io_op,
+        BufferManager buffer_mgr,
+        int64_t offset,
+        int64_t size,
+        bint binary,
+    ):
+        cdef FileReader self = FileReader.__new__(FileReader)
+        self.io_op = io_op
+        self.buffer_mgr = buffer_mgr
+        self.offset = offset
+        self.size = size
+        self.binary = binary
+        return self
 
-        # Start async read
-        read_future = self._read_internal(length)
-        if pump is not None:
-            pump.prime()
-        future_result = await read_future
+    def read(self, Py_ssize_t length=-1, EventLoopPump pump=None):
+        return submit_uv_read(self.io_op, self.offset, self.size, self.binary, length, pump)
 
-        # Check if it's already bytes (early return case)
-        if isinstance(future_result, bytes):
-            return future_result
+    def readinto(self, _PinnedBuffer pinned, Py_ssize_t length, EventLoopPump pump=None):
+        return submit_uv_readinto(self.io_op, self.offset, pinned, length, pump)
 
-        # Process the wrapper
-        wrapper = <_ReadResult>future_result
-        result = _process_read_result(wrapper)
+    cdef object _submit_read(
+        self, char* chunk_ptr, Py_ssize_t total, object keep_obj, uv.uv_fs_cb cb
+    ):
+        return _submit_uv_read_buf(
+            self.io_op, self.offset, self.binary, chunk_ptr, total, keep_obj, cb
+        )
 
-        return result
-
-    @cython.cdivision(True)
-    async def readinto(self, _PinnedBuffer pinned, Py_ssize_t length, EventLoopPump pump=None):
-        """Zero-copy read directly into a pinned writable buffer."""
-        cdef:
-            object read_future
-            object future_result
-            _ReadResult wrapper
-
-        read_future = self._readinto_internal(pinned, length)
-        if pump is not None:
-            pump.prime()
-        future_result = await read_future
-
-        if isinstance(future_result, int):
-            return <Py_ssize_t>future_result
-
-        wrapper = <_ReadResult>future_result
-        return _process_readinto_result(wrapper)
-
-    @cython.cdivision(True)
     cdef object _readinto_internal(self, _PinnedBuffer pinned, Py_ssize_t total):
-        cdef:
-            object future = new_future(self.io_op.loop)
-            int err
-            FSReadContext* ctx
-            uv.uv_fs_t* req
-            Py_ssize_t nbufs
-            uv.uv_buf_t* p_uvbufs
-            Py_ssize_t chunk_size = self.buffer_mgr.buffer_size
-            Py_ssize_t i, chunk_len
-            char* chunk_ptr
-            Py_ssize_t max_bufs = 64
-            Py_ssize_t large_threshold = 10485760
+        return submit_uv_readinto(self.io_op, self.offset, pinned, total, None)
 
-        if total <= 0:
-            future.set_result(0)
-            return future
-
-        if <size_t>total <= self.buffer_mgr.buffer_size:
-            chunk_size = total
-            nbufs = 1
-        elif total > large_threshold:
-            chunk_size = 256 * 1024
-            nbufs = (total + chunk_size - 1) // chunk_size
-            if nbufs > max_bufs:
-                chunk_size = (total + max_bufs - 1) // max_bufs
-                nbufs = max_bufs
-        else:
-            nbufs = (total + self.buffer_mgr.buffer_size - 1) // self.buffer_mgr.buffer_size
-            if nbufs > max_bufs:
-                chunk_size = (total + max_bufs - 1) // max_bufs
-                nbufs = max_bufs
-
-        ctx = <FSReadContext*>malloc(sizeof(FSReadContext))
-        if ctx == NULL:
-            future.set_exception(MemoryError())
-            return future
-
-        ctx.future = <PyObject*>future
-        ctx.binary = True
-        ctx.requested_size = total
-        ctx.nbufs = nbufs
-        ctx.bufs = NULL
-        ctx.buffer_mem = NULL
-        ctx.py_buf = NULL
-
-        ctx.bufs = <uv.uv_buf_t*>malloc(nbufs * sizeof(uv.uv_buf_t))
-        if ctx.bufs == NULL:
-            free(ctx)
-            future.set_exception(MemoryError())
-            return future
-
-        Py_INCREF(pinned)
-        ctx.py_buf = <PyObject*>pinned
-        ctx.buffer_mem = NULL
-
-        p_uvbufs = ctx.bufs
-        chunk_ptr = <char*>pinned.view.buf
-
-        for i in range(nbufs):
-            chunk_len = chunk_size if i < nbufs - 1 else total - chunk_size * (nbufs - 1)
-            p_uvbufs[i] = uv.uv_buf_init(chunk_ptr + (i * chunk_size), <unsigned int>chunk_len)
-
-        Py_INCREF(future)
-
-        req = <uv.uv_fs_t*>malloc(sizeof(uv.uv_fs_t))
-        if req == NULL:
-            if ctx.bufs is not NULL:
-                free(ctx.bufs)
-            Py_DECREF(pinned)
-            free(ctx)
-            Py_DECREF(future)
-            future.set_exception(MemoryError())
-            return future
-
-        req.data = <void*>ctx
-
-        err = uv.uv_fs_read(
-            self.io_op.uv_loop,
-            req,
-            self.io_op.fd,
-            p_uvbufs,
-            <unsigned int>nbufs,
-            self.offset,
-            cb_read
-        )
-
-        if err < 0:
-            if ctx.bufs is not NULL:
-                free(ctx.bufs)
-            Py_DECREF(pinned)
-            free(ctx)
-            free(req)
-            Py_DECREF(future)
-            future.set_exception(OSError(err))
-            return future
-
-        return future
-    @cython.cdivision(True)
     cdef object _read_internal(self, Py_ssize_t length=-1):
-        cdef:
-            object future = new_future(self.io_op.loop)
-            int err
-            Py_ssize_t total
-            FSReadContext* ctx
-            uv.uv_fs_t* req
-            Py_ssize_t nbufs
-            uv.uv_buf_t* p_uvbufs
-            Py_ssize_t chunk_size = self.buffer_mgr.buffer_size
-            Py_ssize_t i, chunk_len
-            char* chunk_ptr
-            Py_ssize_t max_bufs = 64
-            Py_ssize_t large_threshold = 10485760
-            bytes py_buf
-
-        total = length if length >= 0 else max(0, self.size - self.offset)
-
-        if total <= 0:
-            future.set_result(b"" if self.binary else "")
-            return future
-
-        # Calculate number of buffers needed
-        if <size_t>total <= self.buffer_mgr.buffer_size:
-            chunk_size = total
-            nbufs = 1
-        elif total > large_threshold:
-            chunk_size = 256 * 1024
-            nbufs = (total + chunk_size - 1) // chunk_size
-            if nbufs > max_bufs:
-                chunk_size = (total + max_bufs - 1) // max_bufs
-                nbufs = max_bufs
-        else:
-            nbufs = (total + self.buffer_mgr.buffer_size - 1) // self.buffer_mgr.buffer_size
-            if nbufs > max_bufs:
-                chunk_size = (total + max_bufs - 1) // max_bufs
-                nbufs = max_bufs
-
-        # Allocate read context
-        ctx = <FSReadContext*>malloc(sizeof(FSReadContext))
-        if ctx == NULL:
-            future.set_exception(MemoryError())
-            return future
-
-        ctx.future = <PyObject*>future
-        ctx.binary = self.binary
-        ctx.requested_size = total
-        ctx.nbufs = nbufs
-        ctx.bufs = NULL
-        ctx.buffer_mem = NULL
-        ctx.py_buf = NULL
-
-        # Allocate buffer array
-        ctx.bufs = <uv.uv_buf_t*>malloc(nbufs * sizeof(uv.uv_buf_t))
-        if ctx.bufs == NULL:
-            free(ctx)
-            future.set_exception(MemoryError())
-            return future
-
-        # Zero-copy: create a bytes object and have libuv write directly into it.
-        # PyBytes_FromStringAndSize(NULL, n) creates a bytes with uninitialized buffer.
-        # This is safe because the bytes won't be exposed to Python until after
-        # libuv finishes writing (it's held in ctx.py_buf until the callback).
-        py_buf = PyBytes_FromStringAndSize(NULL, total)
-        if py_buf is None:
-            free(ctx.bufs)
-            free(ctx)
-            future.set_exception(MemoryError())
-            return future
-
-        # Keep the bytes object alive during the async operation
-        Py_INCREF(py_buf)
-        ctx.py_buf = <PyObject*>py_buf
-        ctx.buffer_mem = NULL  # Not using malloc'd buffer
-
-        p_uvbufs = ctx.bufs
-        chunk_ptr = PyBytes_AS_STRING(py_buf)
-
-        # Point uv buffers directly into the bytes object's internal buffer
-        for i in range(nbufs):
-            chunk_len = chunk_size if i < nbufs - 1 else total - chunk_size * (nbufs - 1)
-            p_uvbufs[i] = uv.uv_buf_init(chunk_ptr + (i * chunk_size), <unsigned int>chunk_len)
-
-        Py_INCREF(future)
-
-        req = <uv.uv_fs_t*>malloc(sizeof(uv.uv_fs_t))
-        if req == NULL:
-            if ctx.bufs is not NULL:
-                free(ctx.bufs)
-            Py_DECREF(py_buf)
-            free(ctx)
-            Py_DECREF(future)
-            future.set_exception(MemoryError())
-            return future
-
-        req.data = <void*>ctx
-
-        err = uv.uv_fs_read(
-            self.io_op.uv_loop,
-            req,
-            self.io_op.fd,
-            p_uvbufs,
-            <unsigned int>nbufs,
-            self.offset,
-            cb_read
-        )
-
-        if err < 0:
-            if ctx.bufs is not NULL:
-                free(ctx.bufs)
-            Py_DECREF(py_buf)
-            free(ctx)
-            free(req)
-            Py_DECREF(future)
-            future.set_exception(OSError(err))
-            return future
-
-        return future
+        return submit_uv_read(self.io_op, self.offset, self.size, self.binary, length, None)
 
 
 cdef class FileWriter:
@@ -392,64 +314,17 @@ cdef class FileWriter:
         self.buffer_mgr = buffer_mgr
         self.offset = offset
 
+    @staticmethod
+    cdef FileWriter create(
+        IOOperation io_op,
+        BufferManager buffer_mgr,
+        int64_t offset,
+    ):
+        cdef FileWriter self = FileWriter.__new__(FileWriter)
+        self.io_op = io_op
+        self.buffer_mgr = buffer_mgr
+        self.offset = offset
+        return self
+
     cdef object write(self, object bdata):
-        """Write bytes or str; a str is sent from its own UTF-8 buffer (no copy)."""
-        cdef:
-            object future = new_future(self.io_op.loop)
-            char* base_ptr
-            Py_ssize_t total_bytes
-            FSWriteContext* ctx
-            int nbufs, err
-            uv.uv_fs_t* req
-
-        try:
-            if PyUnicode_Check(bdata):
-                base_ptr = <char*>PyUnicode_AsUTF8AndSize(bdata, &total_bytes)
-            elif isinstance(bdata, _PinnedBuffer):
-                total_bytes = (<_PinnedBuffer>bdata).view.len
-                base_ptr = <char*>(<_PinnedBuffer>bdata).view.buf
-            else:
-                total_bytes = PyBytes_GET_SIZE(bdata)
-                base_ptr = PyBytes_AsString(bdata)
-        except Exception as exc:
-            future.set_exception(exc)
-            return future
-
-        if total_bytes == 0:
-            future.set_result(0)
-            return future
-
-        ctx = <FSWriteContext*>malloc(sizeof(FSWriteContext))
-        if ctx == NULL:
-            future.set_exception(MemoryError())
-            return future
-
-        ctx.bufs = self.buffer_mgr.create_write_buffers(base_ptr, total_bytes, &nbufs)
-        if ctx.bufs == NULL:
-            free(ctx)
-            future.set_exception(MemoryError())
-            return future
-
-        ctx.nbufs = nbufs
-        ctx.future = <PyObject*>future
-        ctx._refs = <PyObject*>bdata
-
-        Py_INCREF(bdata)
-        Py_INCREF(future)
-
-        req = <uv.uv_fs_t*>malloc(sizeof(uv.uv_fs_t))
-        if req == NULL:
-            _cleanup_write_context(ctx, NULL, future, bdata)
-            future.set_exception(MemoryError())
-            return future
-
-        req.data = <void*>ctx
-
-        err = uv.uv_fs_write(self.io_op.uv_loop, req, self.io_op.fd, ctx.bufs, ctx.nbufs, self.offset, cb_write)
-
-        if err < 0:
-            _cleanup_write_context(ctx, req, future, bdata)
-            future.set_exception(OSError(err))
-            return future
-
-        return future
+        return submit_uv_write(self.io_op, self.offset, bdata, None)

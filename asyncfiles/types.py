@@ -4,6 +4,8 @@ from os import PathLike
 from typing import Literal, TypeAlias, Union
 
 StrOrBytesPath: TypeAlias = Union[str, bytes, "PathLike[str]", "PathLike[bytes]"]
+PathType: TypeAlias = StrOrBytesPath
+BackendType: TypeAlias = Literal["auto", "io_uring", "libuv"]
 FileDescriptorOrPath: TypeAlias = Union[int, StrOrBytesPath, "PathLike[str]"]
 OpenTextModeUpdating: TypeAlias = Literal[
     "r+",
@@ -39,9 +41,15 @@ OpenTextModeUpdating: TypeAlias = Literal[
     "t+x",
     "+tx",
 ]
-OpenTextModeWriting: TypeAlias = Literal["w", "wt", "tw", "a", "at", "ta", "x", "xt", "tx"]
-OpenTextModeReading: TypeAlias = Literal["r", "rt", "tr", "U", "rU", "Ur", "rtU", "rUt", "Urt", "trU", "tUr", "Utr"]
-OpenTextMode: TypeAlias = Union[OpenTextModeUpdating, OpenTextModeWriting, OpenTextModeReading]
+OpenTextModeWriting: TypeAlias = Literal[
+    "w", "wt", "tw", "a", "at", "ta", "x", "xt", "tx"
+]
+OpenTextModeReading: TypeAlias = Literal[
+    "r", "rt", "tr", "U", "rU", "Ur", "rtU", "rUt", "Urt", "trU", "tUr", "Utr"
+]
+OpenTextMode: TypeAlias = Union[
+    OpenTextModeUpdating, OpenTextModeWriting, OpenTextModeReading
+]
 OpenBinaryModeUpdating: TypeAlias = Literal[
     "rb+",
     "r+b",
@@ -69,5 +77,9 @@ OpenBinaryModeUpdating: TypeAlias = Literal[
     "+bx",
 ]
 OpenBinaryModeWriting: TypeAlias = Literal["wb", "bw", "ab", "ba", "xb", "bx"]
-OpenBinaryModeReading: TypeAlias = Literal["rb", "br", "rbU", "rUb", "Urb", "brU", "bUr", "Ubr"]
-OpenBinaryMode: TypeAlias = Union[OpenBinaryModeUpdating, OpenBinaryModeReading, OpenBinaryModeWriting]
+OpenBinaryModeReading: TypeAlias = Literal[
+    "rb", "br", "rbU", "rUb", "Urb", "brU", "bUr", "Ubr"
+]
+OpenBinaryMode: TypeAlias = Union[
+    OpenBinaryModeUpdating, OpenBinaryModeReading, OpenBinaryModeWriting
+]

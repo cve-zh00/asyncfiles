@@ -2,12 +2,12 @@ import asyncio
 import io
 import os
 import socket
-from pathlib import Path
 
 import pytest
 
-import asyncfiles
-from asyncfiles import SendfileProtocol, open as async_open, sendfile, sendpath
+from asyncfiles import SendfileProtocol
+from asyncfiles import open as async_open
+from asyncfiles import sendfile, sendpath
 
 
 class _CollectorServerProtocol(asyncio.Protocol):
@@ -87,9 +87,7 @@ async def test_sendpath_str_and_ranges(tmp_path):
 
     # Count exceeding remaining bytes
     sent, received = await _run_over_tcp(
-        lambda t, _p: sendpath(
-            t, file_path, offset=len(payload) - 300, count=10_000
-        )
+        lambda t, _p: sendpath(t, file_path, offset=len(payload) - 300, count=10_000)
     )
     assert sent == 300
     assert received == payload[-300:]
@@ -109,9 +107,7 @@ async def test_sendfile_with_asyncfiles_binary_file(tmp_path):
 
     async with async_open(file_path, "rb") as af:
         sent1, received1 = await _run_over_tcp(
-            lambda t, _p: sendfile(
-                t, af, offset=1024, count=4096, chunk_size=1024
-            )
+            lambda t, _p: sendfile(t, af, offset=1024, count=4096, chunk_size=1024)
         )
         assert sent1 == 4096
         assert received1 == payload[1024 : 1024 + 4096]
@@ -133,9 +129,7 @@ async def test_sendfile_with_stdlib_binary_file(tmp_path):
 
     with open(file_path, "rb") as f:
         sent, received = await _run_over_tcp(
-            lambda t, _p: sendfile(
-                t, f, offset=500, count=70_000, chunk_size=8192
-            )
+            lambda t, _p: sendfile(t, f, offset=500, count=70_000, chunk_size=8192)
         )
         assert not f.closed
         assert os.lseek(f.fileno(), 0, os.SEEK_CUR) == 70_500
@@ -329,32 +323,24 @@ async def test_sendfile_validation_errors(tmp_path):
     with pytest.raises(TypeError, match="count must be a positive integer"):
         await sendpath(transport, file_path, count="10")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="count must be a positive integer"):
-        await sendpath(transport, file_path, count=True)  # type: ignore[arg-type]
+        await sendpath(transport, file_path, count=True)
 
     # Negative / non-int / bool offset
-    with pytest.raises(
-        ValueError, match="offset must be a non-negative integer"
-    ):
+    with pytest.raises(ValueError, match="offset must be a non-negative integer"):
         await sendpath(transport, file_path, offset=-5)
-    with pytest.raises(
-        TypeError, match="offset must be a non-negative integer"
-    ):
+    with pytest.raises(TypeError, match="offset must be a non-negative integer"):
         await sendpath(transport, file_path, offset="0")  # type: ignore[arg-type]
-    with pytest.raises(
-        TypeError, match="offset must be a non-negative integer"
-    ):
-        await sendpath(transport, file_path, offset=False)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="offset must be a non-negative integer"):
+        await sendpath(transport, file_path, offset=False)
 
     # Invalid chunk_size
-    with pytest.raises(
-        ValueError, match="chunk_size must be a positive integer"
-    ):
+    with pytest.raises(ValueError, match="chunk_size must be a positive integer"):
         await sendpath(transport, file_path, chunk_size=0)
 
     # Text mode file rejected (asyncfiles TextFile & stdlib text file)
     async with async_open(file_path, "r") as tf:
         with pytest.raises(ValueError, match="binary mode"):
-            await sendfile(transport, tf)  # type: ignore[arg-type]
+            await sendfile(transport, tf)
 
     with open(file_path, "r") as tf_std:
         with pytest.raises(ValueError, match="binary mode"):
@@ -363,7 +349,7 @@ async def test_sendfile_validation_errors(tmp_path):
     # Unopened / closed BinaryFile rejected
     unopened = async_open(file_path, "rb")
     with pytest.raises(ValueError, match="closed file"):
-        await sendfile(transport, unopened)
+        await sendfile(transport, unopened)  # type: ignore[arg-type]
 
     # Closed stdlib file rejected
     closed_std = open(file_path, "rb")
@@ -421,4 +407,3 @@ async def test_sendfile_does_not_leak_futures(tmp_path):
     gc.collect()
     after = sum(1 for obj in gc.get_objects() if isinstance(obj, asyncio.Future))
     assert after - baseline < 10
-

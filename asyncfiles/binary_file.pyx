@@ -7,7 +7,7 @@ from .base_file cimport BaseFile
 from .iterators cimport BaseFileIterator
 from .utils cimport _PinnedBuffer
 from cpython.buffer cimport PyBUF_SIMPLE, PyBUF_WRITABLE
-from cpython.bytes cimport PyBytes_GET_SIZE
+from cpython.bytes cimport PyBytes_CheckExact, PyBytes_GET_SIZE
 from libc.stdint cimport int64_t
 import io
 
@@ -29,7 +29,7 @@ cdef class BinaryFile(BaseFile):
             int64_t write_offset
             Py_ssize_t result
 
-        if isinstance(data, bytes):
+        if PyBytes_CheckExact(data):
             bdata = data
             nbytes = PyBytes_GET_SIZE(<bytes>data)
         else:

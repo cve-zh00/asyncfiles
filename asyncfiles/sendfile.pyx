@@ -366,7 +366,7 @@ async def _sendfile_borrowed_fd(
                 )
                 chunk = await reader.read(n)
             else:
-                uv_reader = FileReader(
+                uv_reader = FileReader.create(
                     io_op, buffer_mgr, offset + sent, file_size, True
                 )
                 chunk = await uv_reader.read(n, pump)
