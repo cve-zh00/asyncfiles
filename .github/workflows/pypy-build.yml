@@ -84,7 +84,7 @@ jobs:
           cp -R "$GITHUB_WORKSPACE/tests" "$RUNNER_TEMP/tests"
           timeout --signal=TERM --kill-after=15s 180s \
             python -m pytest -c "$GITHUB_WORKSPACE/pyproject.toml" \
-            "$RUNNER_TEMP/tests" --import-mode=importlib -v \
+            "$RUNNER_TEMP/tests" --import-mode=importlib -x -v \
             2>&1 | tee "$RUNNER_TEMP/pypy-tests.log"
 
       - name: Upload source build logs
