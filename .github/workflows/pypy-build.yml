@@ -78,11 +78,14 @@ jobs:
 
       - name: Test installed branch package
         if: matrix.source == 'branch'
+        timeout-minutes: 5
         working-directory: ${{ runner.temp }}
         run: |
           cp -R "$GITHUB_WORKSPACE/tests" "$RUNNER_TEMP/tests"
-          python -m pytest -c "$GITHUB_WORKSPACE/pyproject.toml" \
-            "$RUNNER_TEMP/tests" --import-mode=importlib -v
+          timeout --signal=TERM --kill-after=15s 180s \
+            python -m pytest -c "$GITHUB_WORKSPACE/pyproject.toml" \
+            "$RUNNER_TEMP/tests" --import-mode=importlib -v \
+            2>&1 | tee "$RUNNER_TEMP/pypy-tests.log"
 
       - name: Upload source build logs
         if: always()
