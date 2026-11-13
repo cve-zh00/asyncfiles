@@ -1,0 +1,93 @@
+name: PyPy source build
+
+on:
+  push:
+    branches:
+      - ci/pypy-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypy-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-build:
+    name: ${{ matrix.python }} / ${{ matrix.source }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["pypy3.10", "pypy3.11"]
+        source: ["branch", "1.10.4", "1.11.1"]
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool
+          python -m pip install --upgrade pip
+          python -m pip install build pytest pytest-asyncio
+
+      - name: Verify interpreter
+        run: |
+          python -VV
+          python -c "import platform; assert platform.python_implementation() == 'PyPy'"
+
+      - name: Build branch source distribution
+        if: matrix.source == 'branch'
+        run: |
+          python -m build --sdist --outdir "$RUNNER_TEMP/sdist" \
+            2>&1 | tee "$RUNNER_TEMP/pypy-sdist.log"
+
+      - name: Compile wheel from source
+        env:
+          SOURCE: ${{ matrix.source }}
+        run: |
+          if [[ "$SOURCE" == "branch" ]]; then
+            python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/wheels" \
+              "$RUNNER_TEMP"/sdist/*.tar.gz \
+              2>&1 | tee "$RUNNER_TEMP/pypy-wheel.log"
+          else
+            python -m pip wheel --no-deps --no-binary=py-asyncfiles \
+              --wheel-dir "$RUNNER_TEMP/wheels" "py-asyncfiles==$SOURCE" \
+              2>&1 | tee "$RUNNER_TEMP/pypy-wheel.log"
+          fi
+
+      - name: Install and import outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m pip install --no-deps "$RUNNER_TEMP"/wheels/*.whl
+          python -c "import asyncfiles; print(asyncfiles.__version__, asyncfiles.__file__)"
+
+      - name: Test installed branch package
+        if: matrix.source == 'branch'
+        working-directory: ${{ runner.temp }}
+        run: |
+          cp -R "$GITHUB_WORKSPACE/tests" "$RUNNER_TEMP/tests"
+          python -m pytest -c "$GITHUB_WORKSPACE/pyproject.toml" \
+            "$RUNNER_TEMP/tests" --import-mode=importlib -v
+
+      - name: Upload source build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pypy-build-${{ matrix.python }}-${{ matrix.source }}
+          path: ${{ runner.temp }}/pypy-*.log
+          if-no-files-found: ignore
