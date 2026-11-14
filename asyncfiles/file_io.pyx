@@ -8,7 +8,7 @@ from .callbacks cimport cb_read, cb_readinto, cb_write, _ReadResult, _uv_oserror
 from .context cimport FSReadContext, FSWriteContext
 from .cpython cimport PyObject
 from .event_loop cimport EventLoopPump
-from .utils cimport new_future, _PinnedBuffer
+from .utils cimport new_future, _PinnedBuffer, _NativeReadBuffer, ASYNCFILES_PYPY
 from .io_operations cimport IOOperation
 from .buffer_manager cimport BufferManager
 from .memory_utils cimport _cleanup_read_context, _cleanup_write_context
@@ -130,21 +130,27 @@ cdef object submit_uv_read(
         object future
         Py_ssize_t total = length if length >= 0 else max(0, size - offset)
         bytes py_buf
+        _NativeReadBuffer native_buf
 
     if total <= 0:
         future = new_future(io_op.loop)
         future.set_result(b"")
         return future
 
-    py_buf = PyBytes_FromStringAndSize(NULL, total)
-    if py_buf is None:
-        future = new_future(io_op.loop)
-        future.set_exception(MemoryError())
-        return future
-
-    future = _submit_uv_read_buf(
-        io_op, offset, binary, PyBytes_AS_STRING(py_buf), total, py_buf, cb_read
-    )
+    if ASYNCFILES_PYPY:
+        native_buf = _NativeReadBuffer(total)
+        future = _submit_uv_read_buf(
+            io_op, offset, binary, native_buf.data, total, native_buf, cb_read
+        )
+    else:
+        py_buf = PyBytes_FromStringAndSize(NULL, total)
+        if py_buf is None:
+            future = new_future(io_op.loop)
+            future.set_exception(MemoryError())
+            return future
+        future = _submit_uv_read_buf(
+            io_op, offset, binary, PyBytes_AS_STRING(py_buf), total, py_buf, cb_read
+        )
     if pump is not None:
         pump.prime()
     return future

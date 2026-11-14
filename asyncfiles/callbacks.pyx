@@ -7,14 +7,22 @@ from cpython.ref      cimport Py_INCREF, Py_DECREF
 from cpython.object   cimport PyObject
 
 from .context cimport FSReadContext, FSWriteContext
+from .utils cimport _NativeReadBuffer, ASYNCFILES_PYPY
 
 import errno as _errno
 import os as _os
+import sys as _sys
 
 cdef extern from "Python.h":
     object PyUnicode_DecodeFSDefault(const char* s)
 
 cdef object _stat_result = _os.stat_result
+# Older PyPy computes st_*_ns from integer tuple fields and nsec_* slots.
+cdef bint _stat_result_needs_nsec = (
+    _sys.implementation.name == "pypy"
+    and isinstance(_stat_result.st_atime_ns, property)
+    and hasattr(_stat_result, "nsec_atime")
+)
 
 
 cdef object _uv_oserror(int err, str msg):
@@ -35,6 +43,18 @@ cdef inline object _build_stat_result(const uv.uv_stat_t* st):
     cdef int64_t mtime_nsec = <int64_t>st.st_mtim.tv_nsec
     cdef int64_t ctime_sec = <int64_t>st.st_ctim.tv_sec
     cdef int64_t ctime_nsec = <int64_t>st.st_ctim.tv_nsec
+    cdef dict attrs = {
+        "st_atime": atime_sec + atime_nsec * 1e-9,
+        "st_mtime": mtime_sec + mtime_nsec * 1e-9,
+        "st_ctime": ctime_sec + ctime_nsec * 1e-9,
+        "st_atime_ns": atime_sec * 1000000000 + atime_nsec,
+        "st_mtime_ns": mtime_sec * 1000000000 + mtime_nsec,
+        "st_ctime_ns": ctime_sec * 1000000000 + ctime_nsec,
+    }
+    if _stat_result_needs_nsec:
+        attrs["nsec_atime"] = atime_nsec
+        attrs["nsec_mtime"] = mtime_nsec
+        attrs["nsec_ctime"] = ctime_nsec
     return _stat_result(
         (
             st.st_mode,
@@ -48,14 +68,7 @@ cdef inline object _build_stat_result(const uv.uv_stat_t* st):
             mtime_sec,
             ctime_sec,
         ),
-        {
-            "st_atime": atime_sec + atime_nsec * 1e-9,
-            "st_mtime": mtime_sec + mtime_nsec * 1e-9,
-            "st_ctime": ctime_sec + ctime_nsec * 1e-9,
-            "st_atime_ns": atime_sec * 1000000000 + atime_nsec,
-            "st_mtime_ns": mtime_sec * 1000000000 + mtime_nsec,
-            "st_ctime_ns": ctime_sec * 1000000000 + ctime_nsec,
-        },
+        attrs,
     )
 
 
@@ -145,6 +158,9 @@ cdef void cb_full_stat(uv.uv_fs_t* req) noexcept with gil:
                 future.set_exception(_uv_oserror(err, "stat failed"))
             else:
                 future.set_result(_build_stat_result(&req.statbuf))
+    except Exception as error:
+        if not future.done():
+            future.set_exception(error)
     finally:
         uv.uv_fs_req_cleanup(req)
         free(req)
@@ -439,6 +455,8 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
                     result = requested_size
                 if result <= 0 or ctx.py_buf == NULL:
                     res_obj = b""
+                elif ASYNCFILES_PYPY:
+                    res_obj = (<_NativeReadBuffer><object>ctx.py_buf).finish(result)
                 else:
                     py_buf = <bytes>ctx.py_buf
                     if result == requested_size:
@@ -446,6 +464,9 @@ cdef void cb_read(uv.uv_fs_t* req) noexcept with gil:
                     else:
                         res_obj = py_buf[:result]
                 future.set_result(res_obj)
+    except Exception as error:
+        if not future.done():
+            future.set_exception(error)
     finally:
         if ctx.buffer_mem != NULL:
             free(ctx.buffer_mem)

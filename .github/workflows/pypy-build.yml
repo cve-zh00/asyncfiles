@@ -23,6 +23,11 @@ jobs:
       matrix:
         python: ["pypy3.10", "pypy3.11"]
         source: ["branch", "1.10.4", "1.11.1"]
+        include:
+          - python: "3.10"
+            source: branch
+          - python: "3.14"
+            source: branch
     defaults:
       run:
         shell: bash
@@ -46,9 +51,11 @@ jobs:
           python -m pip install build pytest pytest-asyncio
 
       - name: Verify interpreter
+        env:
+          EXPECTED_IMPLEMENTATION: ${{ startsWith(matrix.python, 'pypy') && 'PyPy' || 'CPython' }}
         run: |
           python -VV
-          python -c "import platform; assert platform.python_implementation() == 'PyPy'"
+          python -c "import os, platform; assert platform.python_implementation() == os.environ['EXPECTED_IMPLEMENTATION']"
 
       - name: Build branch source distribution
         if: matrix.source == 'branch'
@@ -61,16 +68,17 @@ jobs:
           SOURCE: ${{ matrix.source }}
         run: |
           if [[ "$SOURCE" == "branch" ]]; then
-            python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/wheels" \
+            python -m pip wheel --no-deps --no-cache-dir --wheel-dir "$RUNNER_TEMP/wheels" \
               "$RUNNER_TEMP"/sdist/*.tar.gz \
               2>&1 | tee "$RUNNER_TEMP/pypy-wheel.log"
           else
-            python -m pip wheel --no-deps --no-binary=py-asyncfiles \
+            python -m pip wheel --no-deps --no-cache-dir --no-binary=py-asyncfiles \
               --wheel-dir "$RUNNER_TEMP/wheels" "py-asyncfiles==$SOURCE" \
               2>&1 | tee "$RUNNER_TEMP/pypy-wheel.log"
           fi
 
       - name: Install and import outside the checkout
+        id: install-package
         working-directory: ${{ runner.temp }}
         run: |
           python -m pip install --no-deps "$RUNNER_TEMP"/wheels/*.whl
@@ -82,10 +90,24 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           cp -R "$GITHUB_WORKSPACE/tests" "$RUNNER_TEMP/tests"
-          timeout --signal=TERM --kill-after=15s 180s \
+          python -c "from asyncfiles.backend import resolve_backend; assert resolve_backend('io_uring') == 'io_uring'"
+          timeout --signal=TERM --kill-after=15s 240s \
             python -m pytest -c "$GITHUB_WORKSPACE/pyproject.toml" \
             "$RUNNER_TEMP/tests" --import-mode=importlib -x -v \
             2>&1 | tee "$RUNNER_TEMP/pypy-tests.log"
+
+      - name: Test installed branch package with asyncio debug
+        if: ${{ !cancelled() && matrix.source == 'branch' && steps.install-package.outcome == 'success' }}
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/tests"
+          cp -R "$GITHUB_WORKSPACE/tests/." "$RUNNER_TEMP/tests"
+          python -c "from asyncfiles.backend import resolve_backend; assert resolve_backend('io_uring') == 'io_uring'"
+          PYTHONASYNCIODEBUG=1 timeout --signal=TERM --kill-after=15s 240s \
+            python -m pytest -c "$GITHUB_WORKSPACE/pyproject.toml" \
+            "$RUNNER_TEMP/tests" --import-mode=importlib --asyncio-debug -x -v \
+            2>&1 | tee "$RUNNER_TEMP/pypy-tests-debug.log"
 
       - name: Upload source build logs
         if: always()

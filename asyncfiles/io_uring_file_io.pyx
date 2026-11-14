@@ -5,7 +5,7 @@
 
 from .io_uring_operations cimport IOUringOperation
 from .buffer_manager cimport BufferManager
-from .utils cimport _PinnedBuffer
+from .utils cimport _PinnedBuffer, _NativeReadBuffer, ASYNCFILES_PYPY
 from cpython.bytes cimport (
     PyBytes_CheckExact,
     PyBytes_FromStringAndSize,
@@ -70,23 +70,30 @@ cdef class IOUringFileReader:
             char* base
             int res
             bytes py_buf
+            _NativeReadBuffer native_buf
+            object keep_obj
             list tasks
 
         total = length if length >= 0 else max(0, self.size - self.offset)
         if total <= 0:
             return b""
 
-        py_buf = PyBytes_FromStringAndSize(NULL, total)
-        if py_buf is None:
-            raise MemoryError()
-
-        base = PyBytes_AS_STRING(py_buf)
+        if ASYNCFILES_PYPY:
+            native_buf = _NativeReadBuffer(total)
+            base = native_buf.data
+            keep_obj = native_buf
+        else:
+            py_buf = PyBytes_FromStringAndSize(NULL, total)
+            if py_buf is None:
+                raise MemoryError()
+            base = PyBytes_AS_STRING(py_buf)
+            keep_obj = py_buf
         if total < PARALLEL_THRESHOLD:
             got = 0
             while got < total:
                 res = await self.io_op.read(
                     base + got, <unsigned int>(total - got),
-                    self.offset + got, py_buf
+                    self.offset + got, keep_obj
                 )
                 if res <= 0:
                     break
@@ -97,7 +104,7 @@ cdef class IOUringFileReader:
             pos = 0
             while pos < total:
                 n = min(CHUNK_SIZE, total - pos)
-                tasks.append(self._read_chunk(py_buf, base_addr, pos, n, self.offset + pos))
+                tasks.append(self._read_chunk(keep_obj, base_addr, pos, n, self.offset + pos))
                 pos += n
             counts = await asyncio.gather(*tasks)
             got = 0
@@ -108,6 +115,8 @@ cdef class IOUringFileReader:
 
         if got <= 0:
             return b""
+        if ASYNCFILES_PYPY:
+            return native_buf.finish(got)
         if got == total:
             return py_buf
         return py_buf[:got]

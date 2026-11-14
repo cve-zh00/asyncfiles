@@ -11,8 +11,15 @@ from cpython.bytes cimport PyBytes_CheckExact, PyBytes_GET_SIZE
 from cpython.ref cimport Py_INCREF, Py_DECREF
 from cpython.long cimport PyLong_FromVoidPtr, PyLong_AsVoidPtr
 import os
+import sys as _sys
 
 cdef object _stat_result_cls = os.stat_result
+# Older PyPy computes st_*_ns from integer tuple fields and nsec_* slots.
+cdef bint _stat_result_needs_nsec = (
+    _sys.implementation.name == "pypy"
+    and isinstance(_stat_result_cls.st_atime_ns, property)
+    and hasattr(_stat_result_cls, "nsec_atime")
+)
 
 
 cdef inline object _statx_to_stat_result(statx* stx):
@@ -25,6 +32,18 @@ cdef inline object _statx_to_stat_result(statx* stx):
     cdef int64_t atime_ns = (<int64_t>stx.stx_atime.tv_sec) * 1000000000LL + <int64_t>stx.stx_atime.tv_nsec
     cdef int64_t mtime_ns = (<int64_t>stx.stx_mtime.tv_sec) * 1000000000LL + <int64_t>stx.stx_mtime.tv_nsec
     cdef int64_t ctime_ns = (<int64_t>stx.stx_ctime.tv_sec) * 1000000000LL + <int64_t>stx.stx_ctime.tv_nsec
+    cdef dict attrs = {
+        "st_atime": stx.stx_atime.tv_sec + stx.stx_atime.tv_nsec * 1e-9,
+        "st_mtime": stx.stx_mtime.tv_sec + stx.stx_mtime.tv_nsec * 1e-9,
+        "st_ctime": stx.stx_ctime.tv_sec + stx.stx_ctime.tv_nsec * 1e-9,
+        "st_atime_ns": atime_ns,
+        "st_mtime_ns": mtime_ns,
+        "st_ctime_ns": ctime_ns,
+    }
+    if _stat_result_needs_nsec:
+        attrs["nsec_atime"] = stx.stx_atime.tv_nsec
+        attrs["nsec_mtime"] = stx.stx_mtime.tv_nsec
+        attrs["nsec_ctime"] = stx.stx_ctime.tv_nsec
     return _stat_result_cls(
         (
             stx.stx_mode,
@@ -38,14 +57,7 @@ cdef inline object _statx_to_stat_result(statx* stx):
             stx.stx_mtime.tv_sec,
             stx.stx_ctime.tv_sec,
         ),
-        {
-            "st_atime": stx.stx_atime.tv_sec + stx.stx_atime.tv_nsec * 1e-9,
-            "st_mtime": stx.stx_mtime.tv_sec + stx.stx_mtime.tv_nsec * 1e-9,
-            "st_ctime": stx.stx_ctime.tv_sec + stx.stx_ctime.tv_nsec * 1e-9,
-            "st_atime_ns": atime_ns,
-            "st_mtime_ns": mtime_ns,
-            "st_ctime_ns": ctime_ns,
-        },
+        attrs,
     )
 
 
@@ -356,8 +368,13 @@ cdef class IOUringPump:
                             future.set_result((<statx*>stx_ptr).stx_size)
                         free(stx_ptr)
                 else:
-                    _resolve_statx_query(future, <statx*>stx_ptr, res, <int>entry[2])
-                    free(stx_ptr)
+                    try:
+                        _resolve_statx_query(future, <statx*>stx_ptr, res, <int>entry[2])
+                    except Exception as error:
+                        if not future.done():
+                            future.set_exception(error)
+                    finally:
+                        free(stx_ptr)
             else:
                 future = entry
                 if not future.cancelled():

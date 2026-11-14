@@ -5,7 +5,7 @@
 
 from .uring cimport *
 from .io_uring_pump cimport IOUringPump
-from .utils cimport _PinnedBuffer
+from .utils cimport _PinnedBuffer, ASYNCFILES_PYPY
 from libc.stdint cimport int64_t, uint64_t, uintptr_t
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
@@ -272,7 +272,7 @@ cdef class IOUringOperation:
             future.set_result(b"")
             return future
 
-        if total >= PARALLEL_THRESHOLD:
+        if ASYNCFILES_PYPY or total >= PARALLEL_THRESHOLD:
             from .io_uring_file_io import IOUringFileReader
             return IOUringFileReader(self, None, offset, size, True).read(total)
 

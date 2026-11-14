@@ -1,5 +1,10 @@
 
-from cpython.buffer cimport PyObject_GetBuffer, PyBuffer_Release
+from cpython.buffer cimport (
+    PyObject_GetBuffer, PyBuffer_Release, PyBuffer_IsContiguous,
+    PyBUF_STRIDES, PyBUF_WRITABLE,
+)
+from cpython.bytes cimport PyBytes_FromStringAndSize
+from libc.stdlib cimport malloc, free
 from . cimport uv
 from posix.fcntl cimport (
     O_RDONLY, O_WRONLY, O_RDWR,
@@ -17,13 +22,43 @@ cdef class _PinnedBuffer:
 
     def __cinit__(self, object obj, int flags):
         self.acquired = False
-        PyObject_GetBuffer(obj, &self.view, flags)
+        if ASYNCFILES_PYPY:
+            try:
+                PyObject_GetBuffer(obj, &self.view, flags | PyBUF_STRIDES)
+            except ValueError:
+                if flags & PyBUF_WRITABLE:
+                    raise BufferError("Object is not writable") from None
+                raise
+        else:
+            PyObject_GetBuffer(obj, &self.view, flags)
         self.acquired = True
+        if ASYNCFILES_PYPY and not PyBuffer_IsContiguous(&self.view, 'C'):
+            PyBuffer_Release(&self.view)
+            self.acquired = False
+            raise BufferError("Buffer is not C-contiguous")
 
     def __dealloc__(self):
         if self.acquired:
             PyBuffer_Release(&self.view)
             self.acquired = False
+
+
+cdef class _NativeReadBuffer:
+    """Keep PyPy reads in C-owned storage until bytes can be finalized."""
+
+    def __cinit__(self, Py_ssize_t size):
+        self.data = NULL
+        if size <= 0:
+            raise ValueError("Buffer size must be positive")
+        self.data = <char*>malloc(size)
+        if self.data == NULL:
+            raise MemoryError()
+
+    cdef bytes finish(self, Py_ssize_t size):
+        return PyBytes_FromStringAndSize(self.data, size)
+
+    def __dealloc__(self):
+        free(self.data)
 
 
 cdef class FileMode:
